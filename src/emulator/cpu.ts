@@ -1,0 +1,397 @@
+import { CPUState, CPUExecutionState, DATEntry } from './types';
+import { InstructionSet } from './instructionSet';
+
+// 初期DATテーブルの生成 (4エントリ)
+const createDefaultDATTable = (): DATEntry[] => [
+  { valid: false, pfn: 0 },
+  { valid: false, pfn: 0 },
+  { valid: false, pfn: 0 },
+  { valid: false, pfn: 0 },
+];
+
+// CPUの初期状態を生成
+export const initCPUState = (romData?: Uint8Array): CPUState => {
+  const ram = new Uint8Array(512);
+  const rom = new Uint8Array(256);
+
+  if (romData) {
+    // ROMデータをコピー
+    rom.set(romData.subarray(0, 256));
+    // 初期化時にROM(256Byte)からRAMの0番地に全部コピー
+    ram.set(rom);
+  }
+
+  return {
+    registers: [0, 0, 0, 0], // R0, R1, R2, R3
+    pc: 0,
+    datr: 0,
+    zf: false,
+    ef: false,
+    halted: false,
+    ram,
+    rom,
+    datTable: createDefaultDATTable(),
+  };
+};
+
+// 初期実行状態を生成
+export const initCPUExecutionState = (romData?: Uint8Array): CPUExecutionState => {
+  return {
+    cpu: initCPUState(romData),
+    phase: 'FETCH',
+    decoded: null,
+    fetchBuffer: [],
+    lastAccessedRamAddr: null,
+    lastAccessedRomAddr: null,
+    lastWriteRamAddr: null,
+    addressTranslationLog: null,
+  };
+};
+
+// DAT (動的アドレス変換) ロジック
+export const translateAddress = (
+  cpu: CPUState,
+  virtualAddr: number
+): {
+  virtualAddr: number;
+  physicalAddr: number | null;
+  vpn: number;
+  offset: number;
+  valid: boolean;
+  pfn: number | null;
+  success: boolean;
+} => {
+  const vpn = (virtualAddr >> 6) & 0x03; // 上位2bit: 仮想ページ番号
+  const offset = virtualAddr & 0x3F;     // 下位6bit: オフセット
+
+  if (cpu.datr === 0) {
+    // DAT無効: ストレートマッピング (0x000 ~ 0x0FF 物理)
+    return {
+      virtualAddr,
+      physicalAddr: virtualAddr,
+      vpn,
+      offset,
+      valid: true,
+      pfn: null,
+      success: true,
+    };
+  } else {
+    // DAT有効: ページテーブル変換
+    const entry = cpu.datTable[vpn];
+    if (entry.valid) {
+      const physicalAddr = (entry.pfn << 6) | offset;
+      return {
+        virtualAddr,
+        physicalAddr,
+        vpn,
+        offset,
+        valid: true,
+        pfn: entry.pfn,
+        success: true,
+      };
+    } else {
+      // 変換例外
+      return {
+        virtualAddr,
+        physicalAddr: null,
+        vpn,
+        offset,
+        valid: false,
+        pfn: entry.pfn,
+        success: false,
+      };
+    }
+  }
+};
+
+// オペランドのデコード処理 (バイナリ配列からオペランドの数値リストと文字列表現を生成)
+export const decodeOperands = (
+  operandType: string,
+  bytes: number[],
+  _cpu: CPUState
+): { operands: number[]; operandText: string } => {
+  if (bytes.length === 0) {
+    return { operands: [], operandText: '' };
+  }
+
+  // 最初のバイトはOpcode、後続バイトがオペランド
+  const args = bytes.slice(1);
+
+  switch (operandType) {
+    case 'none':
+      return { operands: [], operandText: '' };
+
+    case 'reg_reg': {
+      // 2バイト目: [Rd: 4bit][Rs: 4bit]
+      const rd = (args[0] >> 4) & 0x0F;
+      const rs = args[0] & 0x0F;
+      return {
+        operands: [rd, rs],
+        operandText: `R${rd}, R${rs}`,
+      };
+    }
+
+    case 'reg_imm': {
+      // 2バイト目: Rd (8bit), 3バイト目: imm8 (8bit)
+      const rd = args[0] & 0xFF;
+      const imm = args[1] & 0xFF;
+      return {
+        operands: [rd, imm],
+        operandText: `R${rd}, ${imm}`,
+      };
+    }
+
+    case 'reg_addr': {
+      // 2バイト目: Rd (8bit), 3バイト目: addr8 (8bit)
+      const rd = args[0] & 0xFF;
+      const addr = args[1] & 0xFF;
+      const hexAddr = `0x${addr.toString(16).toUpperCase().padStart(2, '0')}`;
+      return {
+        operands: [rd, addr],
+        operandText: `R${rd}, [${hexAddr}]`,
+      };
+    }
+
+    case 'addr_reg': {
+      // 2バイト目: Rs (8bit), 3バイト目: addr8 (8bit)
+      const rs = args[0] & 0xFF;
+      const addr = args[1] & 0xFF;
+      const hexAddr = `0x${addr.toString(16).toUpperCase().padStart(2, '0')}`;
+      return {
+        operands: [addr, rs],
+        operandText: `[${hexAddr}], R${rs}`,
+      };
+    }
+
+    case 'reg_ind': {
+      // 2バイト目: [Rd: 4bit][Ra: 4bit]
+      const rd = (args[0] >> 4) & 0x0F;
+      const ra = args[0] & 0x0F;
+      return {
+        operands: [rd, ra],
+        operandText: `R${rd}, [R${ra}]`,
+      };
+    }
+
+    case 'ind_reg': {
+      // 2バイト目: [Ra: 4bit][Rs: 4bit]
+      const ra = (args[0] >> 4) & 0x0F;
+      const rs = args[0] & 0x0F;
+      return {
+        operands: [ra, rs],
+        operandText: `[R${ra}], R${rs}`,
+      };
+    }
+
+    case 'addr': {
+      // 2バイト目: addr8 (8bit)
+      const addr = args[0] & 0xFF;
+      const hexAddr = `0x${addr.toString(16).toUpperCase().padStart(2, '0')}`;
+      return {
+        operands: [addr],
+        operandText: `${hexAddr}`,
+      };
+    }
+
+    case 'page_frame': {
+      // 2バイト目: [Page: 4bit][Frame: 4bit]
+      const page = (args[0] >> 4) & 0x0F;
+      const frame = args[0] & 0x0F;
+      return {
+        operands: [page, frame],
+        operandText: `${page}, ${frame}`,
+      };
+    }
+
+    case 'page': {
+      // 2バイト目: Page (8bit)
+      const page = args[0] & 0xFF;
+      return {
+        operands: [page],
+        operandText: `${page}`,
+      };
+    }
+
+    default:
+      return { operands: [], operandText: '' };
+  }
+};
+
+// クロックステップ (FETCH -> DECODE -> EXECUTE を段階的に実行)
+export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
+  // すでに停止または例外発生状態なら何もしない
+  if (execState.cpu.halted || execState.cpu.ef) {
+    return {
+      ...execState,
+      phase: execState.cpu.ef ? 'FAULT' : 'HALTED',
+    };
+  }
+
+  const nextState = { ...execState, cpu: { ...execState.cpu } };
+  nextState.cpu.registers = [...execState.cpu.registers];
+  nextState.cpu.datTable = execState.cpu.datTable.map((e) => ({ ...e }));
+  // RAMとROMは参照そのまま（破壊的変更を行うが、React状態遷移のためにシャローコピーは上位で行う）
+
+  // アクセス履歴をリセット
+  nextState.lastAccessedRamAddr = null;
+  nextState.lastAccessedRomAddr = null;
+  nextState.lastWriteRamAddr = null;
+  nextState.addressTranslationLog = null;
+
+  switch (execState.phase) {
+    case 'FETCH': {
+      const pc = nextState.cpu.pc;
+      if (pc >= 256) {
+        nextState.cpu.halted = true;
+        nextState.cpu.ef = true;
+        nextState.phase = 'FAULT';
+        return nextState;
+      }
+
+      // ROMからオペコードを読み取る
+      const opcode = nextState.cpu.rom[pc];
+      nextState.lastAccessedRomAddr = pc;
+
+      const instDef = InstructionSet[opcode];
+      if (!instDef) {
+        // 未定義命令例外
+        nextState.cpu.ef = true;
+        nextState.cpu.halted = true;
+        nextState.phase = 'FAULT';
+        return nextState;
+      }
+
+      // 命令に必要なバイト数分フェッチ
+      const bytesToFetch = instDef.bytes;
+      const fetchBuffer: number[] = [];
+      for (let i = 0; i < bytesToFetch; i++) {
+        const addr = (pc + i) & 0xFF;
+        fetchBuffer.push(nextState.cpu.rom[addr]);
+      }
+
+      nextState.fetchBuffer = fetchBuffer;
+      nextState.decoded = null;
+      nextState.phase = 'DECODE';
+      break;
+    }
+
+    case 'DECODE': {
+      const opcode = nextState.fetchBuffer[0];
+      const instDef = InstructionSet[opcode];
+
+      const { operands, operandText } = decodeOperands(
+        instDef.operandType,
+        nextState.fetchBuffer,
+        nextState.cpu
+      );
+
+      const explanation = instDef.explain(operands);
+
+      nextState.decoded = {
+        opcode,
+        mnemonic: instDef.mnemonic,
+        bytes: instDef.bytes,
+        operands,
+        operandText,
+        explanation,
+      };
+
+      nextState.phase = 'EXECUTE';
+      break;
+    }
+
+    case 'EXECUTE': {
+      if (!nextState.decoded) {
+        nextState.phase = 'FETCH';
+        break;
+      }
+
+      const decoded = nextState.decoded;
+      const instDef = InstructionSet[decoded.opcode];
+
+      // メモリアクセス時のヘルパーを用意
+      const readMem = (virtualAddr: number): number => {
+        const trans = translateAddress(nextState.cpu, virtualAddr);
+        nextState.addressTranslationLog = trans;
+        nextState.lastAccessedRamAddr = trans.physicalAddr;
+
+        if (trans.success && trans.physicalAddr !== null) {
+          return nextState.cpu.ram[trans.physicalAddr];
+        } else {
+          // DAT変換エラー
+          nextState.cpu.ef = true;
+          nextState.cpu.halted = true;
+          return 0;
+        }
+      };
+
+      const writeMem = (virtualAddr: number, val: number): boolean => {
+        const trans = translateAddress(nextState.cpu, virtualAddr);
+        nextState.addressTranslationLog = trans;
+
+        if (trans.success && trans.physicalAddr !== null) {
+          nextState.cpu.ram[trans.physicalAddr] = val & 0xFF;
+          nextState.lastWriteRamAddr = trans.physicalAddr;
+          nextState.lastAccessedRamAddr = trans.physicalAddr;
+          return true;
+        } else {
+          // DAT変換エラー
+          nextState.cpu.ef = true;
+          nextState.cpu.halted = true;
+          return false;
+        }
+      };
+
+      // 実行前のPCを保存し、分岐命令で書き換わったか検出できるようにする
+      const pcBeforeExec = nextState.cpu.pc;
+
+      // 命令の実行
+      instDef.execute(nextState.cpu, decoded.operands, { readMem, writeMem });
+
+      // PCの更新 (実行中にPCが直接書き換わっていなければ自動インクリメント)
+      if (nextState.cpu.pc === pcBeforeExec && !nextState.cpu.halted) {
+        nextState.cpu.pc = (pcBeforeExec + decoded.bytes) & 0xFF;
+      }
+
+      // 実行後のステータスチェック
+      if (nextState.cpu.ef) {
+        nextState.phase = 'FAULT';
+      } else if (nextState.cpu.halted) {
+        nextState.phase = 'HALTED';
+      } else {
+        nextState.phase = 'FETCH';
+        nextState.decoded = null;
+        nextState.fetchBuffer = [];
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  return nextState;
+};
+
+// 1命令を実行 (FETCHから次のFETCHフェーズの直前まで一気に進める)
+export const stepInstruction = (execState: CPUExecutionState): CPUExecutionState => {
+  let state = execState;
+
+  if (state.cpu.halted || state.cpu.ef) {
+    return {
+      ...state,
+      phase: state.cpu.ef ? 'FAULT' : 'HALTED',
+    };
+  }
+
+  // FETCHから始めて、次にFETCHフェーズに入る、または停止するまで回す
+  state = stepCPU(state); // FETCH -> DECODE
+  if (state.phase === 'DECODE') {
+    state = stepCPU(state); // DECODE -> EXECUTE
+  }
+  if (state.phase === 'EXECUTE') {
+    state = stepCPU(state); // EXECUTE -> FETCH/HALTED/FAULT
+  }
+
+  return state;
+};

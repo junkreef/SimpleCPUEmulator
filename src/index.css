@@ -1,0 +1,228 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@500;700;900&display=swap');
+
+:root {
+  /* サイバーパンク・ダークネオン・カラーパレット */
+  --bg-main: #050811;
+  --bg-panel: rgba(10, 18, 36, 0.7);
+  --bg-panel-solid: #0d162a;
+  --border-color: rgba(0, 210, 255, 0.15);
+  --border-active: rgba(0, 210, 255, 0.5);
+
+  --color-primary: #00d2ff;      /* ネオンブルー */
+  --color-secondary: #ff007f;    /* サイバーピンク */
+  --color-success: #00ffaa;      /* エメラルドグリーン */
+  --color-warning: #ffaa00;      /* アンバーゴールド */
+  --color-text-main: #e2e8f0;
+  --color-text-muted: #64748b;
+  --color-text-bright: #ffffff;
+
+  /* フォントスタック */
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'Fira Code', monospace;
+  --font-digital: 'Orbitron', sans-serif;
+
+  /* シャドウ / 発光エフェクト */
+  --shadow-neon-blue: 0 0 10px rgba(0, 210, 255, 0.3), 0 0 20px rgba(0, 210, 255, 0.1);
+  --shadow-neon-pink: 0 0 10px rgba(ff, 0, 127, 0.3), 0 0 20px rgba(ff, 0, 127, 0.1);
+  --shadow-neon-green: 0 0 10px rgba(0, 255, 170, 0.3), 0 0 20px rgba(0, 255, 170, 0.1);
+  
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--color-text-main);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  min-height: 100vh;
+  /* サイバーグリッド背景 */
+  background-image: 
+    linear-gradient(rgba(0, 210, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 210, 255, 0.02) 1px, transparent 1px);
+  background-size: 30px 30px;
+  background-position: center;
+}
+
+/* スクロールバーのカスタマイズ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(10, 18, 36, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 210, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 210, 255, 0.4);
+}
+
+/* プレミアムガラスパネル */
+.cyber-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+  overflow: hidden;
+}
+
+.cyber-panel:hover {
+  border-color: var(--border-active);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), var(--shadow-neon-blue);
+}
+
+/* ネオンボタン */
+.cyber-button {
+  background: rgba(0, 210, 255, 0.05);
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  text-shadow: 0 0 4px rgba(0, 210, 255, 0.5);
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.05);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cyber-button:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: var(--bg-main);
+  box-shadow: 0 0 15px rgba(0, 210, 255, 0.4);
+  text-shadow: none;
+  transform: translateY(-1px);
+}
+
+.cyber-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.cyber-button:disabled {
+  border-color: var(--color-text-muted);
+  color: var(--color-text-muted);
+  background: transparent;
+  cursor: not-allowed;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+.cyber-button.secondary {
+  border-color: var(--color-secondary);
+  color: var(--color-secondary);
+  background: rgba(255, 0, 127, 0.05);
+  text-shadow: 0 0 4px rgba(255, 0, 127, 0.5);
+}
+
+.cyber-button.secondary:hover:not(:disabled) {
+  background: var(--color-secondary);
+  color: var(--bg-main);
+  box-shadow: 0 0 15px rgba(255, 0, 127, 0.4);
+}
+
+.cyber-button.success {
+  border-color: var(--color-success);
+  color: var(--color-success);
+  background: rgba(0, 255, 170, 0.05);
+  text-shadow: 0 0 4px rgba(0, 255, 170, 0.5);
+}
+
+.cyber-button.success:hover:not(:disabled) {
+  background: var(--color-success);
+  color: var(--bg-main);
+  box-shadow: 0 0 15px rgba(0, 255, 170, 0.4);
+}
+
+/* アニメーションキーフレーム */
+@keyframes pulse-cyan {
+  0%, 100% { stroke-opacity: 0.3; stroke-width: 2; }
+  50% { stroke-opacity: 1; stroke-width: 4; filter: drop-shadow(0 0 6px var(--color-primary)); }
+}
+
+@keyframes pulse-pink {
+  0%, 100% { stroke-opacity: 0.3; stroke-width: 2; }
+  50% { stroke-opacity: 1; stroke-width: 4; filter: drop-shadow(0 0 6px var(--color-secondary)); }
+}
+
+@keyframes pulse-green {
+  0%, 100% { stroke-opacity: 0.3; stroke-width: 2; }
+  50% { stroke-opacity: 1; stroke-width: 4; filter: drop-shadow(0 0 6px var(--color-success)); }
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-cyan {
+  animation: pulse-cyan 2s infinite ease-in-out;
+}
+
+.animate-pulse-pink {
+  animation: pulse-pink 2s infinite ease-in-out;
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2s infinite ease-in-out;
+}
+
+.animate-dash-flow {
+  stroke-dasharray: 8, 4;
+  animation: dash 1s linear infinite;
+}
+
+.animate-blink {
+  animation: blink 1.5s infinite ease-in-out;
+}
+
+/* アナログ/デジタル数値表示 */
+.digital-display {
+  font-family: var(--font-digital);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+/* 暗闇で光る文字 */
+.glow-text-cyan {
+  color: var(--color-primary);
+  text-shadow: 0 0 8px rgba(0, 210, 255, 0.6);
+}
+
+.glow-text-pink {
+  color: var(--color-secondary);
+  text-shadow: 0 0 8px rgba(255, 0, 127, 0.6);
+}
+
+.glow-text-green {
+  color: var(--color-success);
+  text-shadow: 0 0 8px rgba(0, 255, 170, 0.6);
+}
+
+.glow-text-amber {
+  color: var(--color-warning);
+  text-shadow: 0 0 8px rgba(255, 170, 0, 0.6);
+}
