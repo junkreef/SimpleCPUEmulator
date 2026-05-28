@@ -27,16 +27,17 @@ const parseNumber = (str: string): number => {
 // オペランドパース用の正規表現マッピング
 const OperandRegex: Record<OperandType, RegExp> = {
   none: /^\s*$/,
-  reg_reg: /^\s*R([0-3])\s*,\s*R([0-3])\s*$/i,
-  reg_imm: /^\s*R([0-3])\s*,\s*(0x[0-9A-F]+|-?[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
-  reg_addr: /^\s*R([0-3])\s*,\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*$/i,
-  addr_reg: /^\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*,\s*R([0-3])\s*$/i,
-  reg_ind: /^\s*R([0-3])\s*,\s*\[\s*R([0-3])\s*\]\s*$/i,
-  ind_reg: /^\s*\[\s*R([0-3])\s*\]\s*,\s*R([0-3])\s*$/i,
+  reg_reg: /^\s*R([0-7])\s*,\s*R([0-7])\s*$/i,
+  reg_imm: /^\s*R([0-7])\s*,\s*(0x[0-9A-F]+|-?[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
+  reg_addr: /^\s*R([0-7])\s*,\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*$/i,
+  addr_reg: /^\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*,\s*R([0-7])\s*$/i,
+  reg_ind: /^\s*R([0-7])\s*,\s*\[\s*R([0-7])\s*\]\s*$/i,
+  ind_reg: /^\s*\[\s*R([0-7])\s*\]\s*,\s*R([0-7])\s*$/i,
   addr: /^\s*([a-zA-Z_][a-zA-Z0-9_]*|0x[0-9A-F]+|[0-9]+)\s*$/i, // ラベルまたは数値
   page_frame: /^\s*([0-3])\s*,\s*([0-7])\s*$/i,
   page: /^\s*([0-3])\s*$/i,
-  cr_reg: /^\s*CR1\s*,\s*R([0-3])\s*$/i,
+  cr_reg: /^\s*CR1\s*,\s*R([0-7])\s*$/i,
+  reg: /^\s*R([0-7])\s*$/i, // <--- Single register indirect branch target
 };
 
 // パースされた文字列引数をバイナリバイト列にエンコードする
@@ -135,6 +136,12 @@ const encodeOperands = (
     }
 
     case 'cr_reg': {
+      const rs = parseInt(matches[1], 10);
+      bytes.push(rs & 0x0F);
+      return { bytes };
+    }
+
+    case 'reg': {
       const rs = parseInt(matches[1], 10);
       bytes.push(rs & 0x0F);
       return { bytes };

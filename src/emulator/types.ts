@@ -4,7 +4,7 @@ export interface DATEntry {
 }
 
 export interface CPUState {
-  registers: number[]; // R0, R1, R2, R3 (各8bit)
+  registers: number[]; // R0 to R7 (各8bit)
   pc: number;          // プログラムカウンタ (8bit)
   datr: number;        // DAT制御レジスタ (8bit、下位1bitが有効フラグ)
   cr1: number;         // コントロールレジスタ1 (PASCE / ページテーブルの物理フレーム番号 0~7)
@@ -26,7 +26,8 @@ export type OperandType =
   | 'addr'
   | 'page_frame'
   | 'page'
-  | 'cr_reg';
+  | 'cr_reg'
+  | 'reg';
 
 export interface DecodedInstruction {
   opcode: number;

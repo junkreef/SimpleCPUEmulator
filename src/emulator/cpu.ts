@@ -14,7 +14,7 @@ export const initCPUState = (romData?: Uint8Array): CPUState => {
   }
 
   return {
-    registers: [0, 0, 0, 0], // R0, R1, R2, R3
+    registers: [0, 0, 0, 0, 0, 0, 0, 0], // R0 to R7
     pc: 0,
     datr: 0,
     cr1: 0, // コントロールレジスタ1の初期値
@@ -215,6 +215,15 @@ export const decodeOperands = (
       return {
         operands: [rs],
         operandText: `CR1, R${rs}`,
+      };
+    }
+
+    case 'reg': {
+      // 2バイト目: Rs (8bit, R0-R7)
+      const rs = args[0] & 0x0F;
+      return {
+        operands: [rs],
+        operandText: `R${rs}`,
       };
     }
 

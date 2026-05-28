@@ -25,12 +25,6 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
     fetchBuffer,
   } = execState;
 
-  // レジスタ表示用数値
-  const r0 = cpu.registers[0];
-  const r1 = cpu.registers[1];
-  const r2 = cpu.registers[2];
-  const r3 = cpu.registers[3];
-
   // 16進数フォーマットヘルパー
   const toHex = (val: number, len: number = 2) => {
     return val.toString(16).toUpperCase().padStart(len, '0');
@@ -168,10 +162,10 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
           {/* IRへの接続線 (隙間を開けるため X=12 から X=25 へ接続) */}
           <path d="M 12 217 L 25 217" fill="none" stroke="rgba(255, 0, 127, 0.1)" strokeWidth="3" />
           {/* 各レジスタへの分岐線 */}
-          <path d="M 12 41 L 140 41" fill="none" stroke="rgba(255, 0, 127, 0.1)" strokeWidth="2" />
-          <path d="M 12 71 L 140 71" fill="none" stroke="rgba(255, 0, 127, 0.1)" strokeWidth="2" />
-          <path d="M 12 101 L 140 101" fill="none" stroke="rgba(255, 0, 127, 0.1)" strokeWidth="2" />
-          <path d="M 12 131 L 140 131" fill="none" stroke="rgba(255, 0, 127, 0.1)" strokeWidth="2" />
+          {Array.from({ length: 8 }).map((_, idx) => {
+            const y = 24 + idx * 21;
+            return <path key={idx} d={`M 12 ${y} L 140 ${y}`} fill="none" stroke="rgba(255, 0, 127, 0.1)" strokeWidth="2" />;
+          })}
 
           {/* FETCH時: RAM ➔ DATA BUS ➔ IR (命令フェッチ) */}
           {isFetch && (
@@ -179,48 +173,30 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
           )}
 
           {/* EXECUTE メモリロード時 (LOAD Rd, [addr] / LOAD Rd, [Ra]): RAM ➔ DATA BUS ➔ 指定レジスタ */}
-          {isExecute && (isLoadAddr || isLoadInd) && decoded && (
+          {isExecute && (isLoadAddr || isLoadInd) && decoded && decoded.operands[0] >= 0 && decoded.operands[0] < 8 && (
             <>
-              {/* R0がロード先の場合: Y=41まで下りてR0へ */}
-              {decoded.operands[0] === 0 && (
-                <>
-                  <path d="M 580 15 L 12 15 L 12 41" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 41 L 140 41" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
-              {/* R1がロード先の場合: Y=71まで下りてR1へ */}
-              {decoded.operands[0] === 1 && (
-                <>
-                  <path d="M 580 15 L 12 15 L 12 71" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 71 L 140 71" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
-              {/* R2がロード先の場合: Y=101まで下りてR2へ */}
-              {decoded.operands[0] === 2 && (
-                <>
-                  <path d="M 580 15 L 12 15 L 12 101" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 101 L 140 101" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
-              {/* R3がロード先の場合: Y=131まで下りてR3へ */}
-              {decoded.operands[0] === 3 && (
-                <>
-                  <path d="M 580 15 L 12 15 L 12 131" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 131 L 140 131" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
+              {(() => {
+                const rd = decoded.operands[0];
+                const y = 24 + rd * 21;
+                return (
+                  <>
+                    <path d={`M 580 15 L 12 15 L 12 ${y}`} fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
+                    <path d={`M 12 ${y} L 140 ${y}`} fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
+                  </>
+                );
+              })()}
             </>
           )}
 
           {/* EXECUTE メモリストア時 (STORE [addr], Rs / STORE [Ra], Rs): 指定レジスタ ➔ DATA BUS ➔ RAM */}
-          {isExecute && (isStoreAddr || isStoreInd) && (
+          {isExecute && (isStoreAddr || isStoreInd) && decoded && decoded.operands[1] >= 0 && decoded.operands[1] < 8 && (
             <>
               <path d="M 12 15 L 580 15" fill="none" stroke="var(--color-secondary)" strokeWidth="3" className="animate-dash-flow" />
-              {/* アクティブな読み出し元レジスタ (Rs) の分岐のみ光らせる */}
-              {decoded && decoded.operandText.endsWith('R0') && <path d="M 140 41 L 12 41 L 12 15" fill="none" stroke="var(--color-secondary)" strokeWidth="2" className="animate-dash-flow" />}
-              {decoded && decoded.operandText.endsWith('R1') && <path d="M 140 71 L 12 71 L 12 15" fill="none" stroke="var(--color-secondary)" strokeWidth="2" className="animate-dash-flow" />}
-              {decoded && decoded.operandText.endsWith('R2') && <path d="M 140 101 L 12 101 L 12 15" fill="none" stroke="var(--color-secondary)" strokeWidth="2" className="animate-dash-flow" />}
-              {decoded && decoded.operandText.endsWith('R3') && <path d="M 140 131 L 12 131 L 12 15" fill="none" stroke="var(--color-secondary)" strokeWidth="2" className="animate-dash-flow" />}
+              {(() => {
+                const rs = decoded.operands[1];
+                const y = 24 + rs * 21;
+                return <path d={`M 140 ${y} L 12 ${y} L 12 15`} fill="none" stroke="var(--color-secondary)" strokeWidth="2" className="animate-dash-flow" />;
+              })()}
             </>
           )}
 
@@ -249,54 +225,47 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
           )}
 
           {/* 各レジスタ ➔ MUX 1 */}
-          <path d="M 190 41 L 220 41" fill="none" stroke="rgba(0, 210, 255, 0.15)" strokeWidth="2" />
-          <path d="M 190 71 L 220 71" fill="none" stroke="rgba(0, 210, 255, 0.15)" strokeWidth="2" />
-          <path d="M 190 101 L 220 101" fill="none" stroke="rgba(0, 210, 255, 0.15)" strokeWidth="2" />
-          <path d="M 190 131 L 220 131" fill="none" stroke="rgba(0, 210, 255, 0.15)" strokeWidth="2" />
+          {Array.from({ length: 8 }).map((_, idx) => {
+            const y = 24 + idx * 21;
+            return <path key={idx} d={`M 190 ${y} L 220 ${y}`} fill="none" stroke="rgba(0, 210, 255, 0.15)" strokeWidth="2" />;
+          })}
           {isExecute && (
             <>
-              {/* R0のアクティブ判定 */}
-              {/* 1. 演算・比較のオペランドにR0が含まれる (Primary 青) */}
-              {(isMathOp || isCmpOp) && decoded && decoded.operandText.includes('R0') && <path d="M 190 41 L 220 41" fill="none" stroke="var(--color-primary)" strokeWidth="2" className="animate-dash-flow" />}
-              {/* 2. レジスタ間接 [R0] としてアドレス指示として使われる (Warning 黄) */}
-              {decoded && (
-                (isStoreInd && decoded.operands[0] === 0) ||
-                (isLoadInd && decoded.operands[1] === 0)
-              ) && <path d="M 190 41 L 220 41" fill="none" stroke="var(--color-warning)" strokeWidth="2" className="animate-dash-flow" filter="url(#glowWarning)" />}
-
-              {/* R1のアクティブ判定 */}
-              {(isMathOp || isCmpOp) && decoded && decoded.operandText.includes('R1') && <path d="M 190 71 L 220 71" fill="none" stroke="var(--color-primary)" strokeWidth="2" className="animate-dash-flow" />}
-              {decoded && (
-                (isStoreInd && decoded.operands[0] === 1) ||
-                (isLoadInd && decoded.operands[1] === 1)
-              ) && <path d="M 190 71 L 220 71" fill="none" stroke="var(--color-warning)" strokeWidth="2" className="animate-dash-flow" filter="url(#glowWarning)" />}
-
-              {/* R2のアフティブ判定 */}
-              {(isMathOp || isCmpOp) && decoded && decoded.operandText.includes('R2') && <path d="M 190 101 L 220 101" fill="none" stroke="var(--color-primary)" strokeWidth="2" className="animate-dash-flow" />}
-              {decoded && (
-                (isStoreInd && decoded.operands[0] === 2) ||
-                (isLoadInd && decoded.operands[1] === 2)
-              ) && <path d="M 190 101 L 220 101" fill="none" stroke="var(--color-warning)" strokeWidth="2" className="animate-dash-flow" filter="url(#glowWarning)" />}
-
-              {/* R3のアクティブ判定 */}
-              {(isMathOp || isCmpOp) && decoded && decoded.operandText.includes('R3') && <path d="M 190 131 L 220 131" fill="none" stroke="var(--color-primary)" strokeWidth="2" className="animate-dash-flow" />}
-              {decoded && (
-                (isStoreInd && decoded.operands[0] === 3) ||
-                (isLoadInd && decoded.operands[1] === 3)
-              ) && <path d="M 190 131 L 220 131" fill="none" stroke="var(--color-warning)" strokeWidth="2" className="animate-dash-flow" filter="url(#glowWarning)" />}
+              {Array.from({ length: 8 }).map((_, idx) => {
+                const regName = `R${idx}`;
+                const isOpActive = (isMathOp || isCmpOp) && decoded && decoded.operandText.includes(regName);
+                
+                // レジスタ間接 [R_idx]
+                const isIndActive = decoded && (
+                  (isStoreInd && decoded.operands[0] === idx) ||
+                  (isLoadInd && decoded.operands[1] === idx)
+                );
+                
+                const y = 24 + idx * 21;
+                
+                if (isOpActive) {
+                  return <path key={idx} d={`M 190 ${y} L 220 ${y}`} fill="none" stroke="var(--color-primary)" strokeWidth="2" className="animate-dash-flow" />;
+                }
+                
+                if (isIndActive) {
+                  return <path key={idx} d={`M 190 ${y} L 220 ${y}`} fill="none" stroke="var(--color-warning)" strokeWidth="2" className="animate-dash-flow" filter="url(#glowWarning)" />;
+                }
+                
+                return null;
+              })}
             </>
           )}
 
           {/* MUX 1 ➔ ALU (入力1) */}
-          <path d="M 240 85 L 270 85 L 270 255" fill="none" stroke="rgba(0, 210, 255, 0.1)" strokeWidth="2" />
+          <path d="M 240 95 L 270 95 L 270 255" fill="none" stroke="rgba(0, 210, 255, 0.1)" strokeWidth="2" />
           {isExecute && (isMathOp || isCmpOp) && (
-            <path d="M 240 85 L 270 85 L 270 255" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
+            <path d="M 240 95 L 270 95 L 270 255" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
           )}
 
           {/* MUX 1 ➔ MUX 2 (データアドレス線、レジスタ間接アドレス転送) */}
-          <path d="M 240 85 L 290 85 L 290 160 L 340 160" fill="none" stroke="rgba(0, 210, 255, 0.1)" strokeWidth="2" />
+          <path d="M 240 95 L 290 95 L 290 160 L 340 160" fill="none" stroke="rgba(0, 210, 255, 0.1)" strokeWidth="2" />
           {isExecute && (isLoadInd || isStoreInd) && (
-            <path d="M 240 85 L 290 85 L 290 160 L 340 160" fill="none" stroke="var(--color-warning)" strokeWidth="2" className="animate-dash-flow" filter="url(#glowWarning)" />
+            <path d="M 240 95 L 290 95 L 290 160 L 340 160" fill="none" stroke="var(--color-warning)" strokeWidth="2" className="animate-dash-flow" filter="url(#glowWarning)" />
           )}
 
           {/* ALU ➔ MUX 2 (演算結果アドレス用) */}
@@ -305,39 +274,20 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
           {/* ALU ➔ 共通データバス (X=12) の結果書き戻し線 */}
           <path d="M 270 295 L 12 295" fill="none" stroke="rgba(0, 210, 255, 0.1)" strokeWidth="2" />
           {/* EXECUTE 演算命令結果書き戻し時 (ADD/SUB): ALU ➔ 共通データバス ➔ 指定レジスタ */}
-          {isExecute && isMathOp && decoded && (
+          {isExecute && isMathOp && decoded && decoded.operands[0] >= 0 && decoded.operands[0] < 8 && (
             <>
               {/* ALUから共通バスへの水平パルス */}
               <path d="M 270 295 L 12 295" fill="none" stroke="var(--color-success)" strokeWidth="2.5" className="animate-dash-flow" />
-              
-              {/* R0が書き戻し先の場合: X=12の縦幹をY=41まで上り、R0へ */}
-              {decoded.operands[0] === 0 && (
-                <>
-                  <path d="M 12 295 L 12 41" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 41 L 140 41" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
-              {/* R1が書き戻し先の場合: X=12の縦幹をY=71まで上り、R1へ */}
-              {decoded.operands[0] === 1 && (
-                <>
-                  <path d="M 12 295 L 12 71" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 71 L 140 71" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
-              {/* R2が書き戻し先の場合: X=12の縦幹をY=101まで上り、R2へ */}
-              {decoded.operands[0] === 2 && (
-                <>
-                  <path d="M 12 295 L 12 101" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 101 L 140 101" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
-              {/* R3が書き戻し先の場合: X=12の縦幹をY=131まで上り、R3へ */}
-              {decoded.operands[0] === 3 && (
-                <>
-                  <path d="M 12 295 L 12 131" fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
-                  <path d="M 12 131 L 140 131" fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
-                </>
-              )}
+              {(() => {
+                const rd = decoded.operands[0];
+                const y = 24 + rd * 21;
+                return (
+                  <>
+                    <path d={`M 12 295 L 12 ${y}`} fill="none" stroke="var(--color-success)" strokeWidth="3" className="animate-dash-flow" />
+                    <path d={`M 12 ${y} L 140 ${y}`} fill="none" stroke="var(--color-success)" strokeWidth="2" className="animate-dash-flow" />
+                  </>
+                );
+              })()}
             </>
           )}
 
@@ -411,43 +361,31 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
             </text>
           </g>
 
-          {/* (3) Registers List (r0 - r3) */}
-          <g transform="translate(140, 25)">
-            {/* r0 */}
-            <g transform="translate(0, 0)">
-              <rect x="0" y="0" width="50" height="22" rx="3" fill={decoded && decoded.operandText.includes('R0') ? 'rgba(0, 210, 255, 0.15)' : 'rgba(10, 18, 36, 0.5)'} stroke={decoded && decoded.operandText.includes('R0') ? 'var(--color-primary)' : 'rgba(255,255,255,0.08)'} strokeWidth="1" />
-              <text x="6" y="14" fill="var(--color-text-muted)" fontSize="8" fontWeight="700">r0</text>
-              <text x="35" y="15" textAnchor="middle" fill="white" className="digital-display" fontSize="11" fontWeight="700">{r0}</text>
-            </g>
-            {/* r1 */}
-            <g transform="translate(0, 30)">
-              <rect x="0" y="0" width="50" height="22" rx="3" fill={decoded && decoded.operandText.includes('R1') ? 'rgba(0, 210, 255, 0.15)' : 'rgba(10, 18, 36, 0.5)'} stroke={decoded && decoded.operandText.includes('R1') ? 'var(--color-primary)' : 'rgba(255,255,255,0.08)'} strokeWidth="1" />
-              <text x="6" y="14" fill="var(--color-text-muted)" fontSize="8" fontWeight="700">r1</text>
-              <text x="35" y="15" textAnchor="middle" fill="white" className="digital-display" fontSize="11" fontWeight="700">{r1}</text>
-            </g>
-            {/* r2 */}
-            <g transform="translate(0, 60)">
-              <rect x="0" y="0" width="50" height="22" rx="3" fill={decoded && decoded.operandText.includes('R2') ? 'rgba(0, 210, 255, 0.15)' : 'rgba(10, 18, 36, 0.5)'} stroke={decoded && decoded.operandText.includes('R2') ? 'var(--color-primary)' : 'rgba(255,255,255,0.08)'} strokeWidth="1" />
-              <text x="6" y="14" fill="var(--color-text-muted)" fontSize="8" fontWeight="700">r2</text>
-              <text x="35" y="15" textAnchor="middle" fill="white" className="digital-display" fontSize="11" fontWeight="700">{r2}</text>
-            </g>
-            {/* r3 */}
-            <g transform="translate(0, 90)">
-              <rect x="0" y="0" width="50" height="22" rx="3" fill={decoded && decoded.operandText.includes('R3') ? 'rgba(0, 210, 255, 0.15)' : 'rgba(10, 18, 36, 0.5)'} stroke={decoded && decoded.operandText.includes('R3') ? 'var(--color-primary)' : 'rgba(255,255,255,0.08)'} strokeWidth="1" />
-              <text x="6" y="14" fill="var(--color-text-muted)" fontSize="8" fontWeight="700">r3</text>
-              <text x="35" y="15" textAnchor="middle" fill="white" className="digital-display" fontSize="11" fontWeight="700">{r3}</text>
-            </g>
+          {/* (3) Registers List (r0 - r7) */}
+          <g transform="translate(140, 15)">
+            {Array.from({ length: 8 }).map((_, idx) => {
+              const regVal = cpu.registers[idx] ?? 0;
+              const regName = `R${idx}`;
+              const isActive = decoded && decoded.operandText.includes(regName);
+              return (
+                <g key={idx} transform={`translate(0, ${idx * 21})`}>
+                  <rect x="0" y="0" width="50" height="18" rx="3" fill={isActive ? 'rgba(0, 210, 255, 0.15)' : 'rgba(10, 18, 36, 0.5)'} stroke={isActive ? 'var(--color-primary)' : 'rgba(255,255,255,0.08)'} strokeWidth="1" />
+                  <text x="6" y="12" fill="var(--color-text-muted)" fontSize="7.5" fontWeight="700">r{idx}</text>
+                  <text x="35" y="13" textAnchor="middle" fill="white" className="digital-display" fontSize="9.5" fontWeight="700">{regVal}</text>
+                </g>
+              );
+            })}
           </g>
 
           {/* (4) MUX 1 (Register Selector Multiplexer - 台形) */}
           <g>
             <polygon
-              points="220,30 240,40 240,130 220,140"
+              points="220,20 240,30 240,165 220,175"
               fill="url(#blueGrad)"
               stroke="var(--border-color)"
               strokeWidth="1.2"
             />
-            <text x="231" y="87" textAnchor="middle" fill="var(--color-text-muted)" fontSize="7" fontWeight="800" transform="rotate(-90 231 87)">MUX 1</text>
+            <text x="231" y="97" textAnchor="middle" fill="var(--color-text-muted)" fontSize="7" fontWeight="800" transform="rotate(-90 231 97)">MUX 1</text>
           </g>
 
           {/* (5) ALU (Arithmetic Logic Unit - 凹型ポリゴン) */}

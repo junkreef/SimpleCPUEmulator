@@ -158,6 +158,40 @@ export const InstructionSet: Record<number, InstructionDef> = {
     },
     explain: ([addr]) => `前回の比較が「不一致（ZFフラグがOFF）」なら、アドレス 0x${addr.toString(16).toUpperCase().padStart(2, '0')} にジャンプします。`,
   },
+  0x33: {
+    opcode: 0x33,
+    mnemonic: 'BR',
+    bytes: 2,
+    operandType: 'reg',
+    execute: (cpu, [rs]) => {
+      cpu.pc = cpu.registers[rs];
+    },
+    explain: ([rs]) => `無条件でプログラムの実行位置を レジスタ R${rs} の値が指すアドレスに移します（レジスタ間接ジャンプ）。`,
+  },
+  0x34: {
+    opcode: 0x34,
+    mnemonic: 'BEQ',
+    bytes: 2,
+    operandType: 'reg',
+    execute: (cpu, [rs]) => {
+      if (cpu.zf) {
+        cpu.pc = cpu.registers[rs];
+      }
+    },
+    explain: ([rs]) => `前回の比較が「一致（ZFフラグがON）」していれば、レジスタ R${rs} の値が指すアドレスにジャンプします。`,
+  },
+  0x35: {
+    opcode: 0x35,
+    mnemonic: 'BNE',
+    bytes: 2,
+    operandType: 'reg',
+    execute: (cpu, [rs]) => {
+      if (!cpu.zf) {
+        cpu.pc = cpu.registers[rs];
+      }
+    },
+    explain: ([rs]) => `前回の比較が「不一致（ZFフラグがOFF）」なら、レジスタ R${rs} の値が指すアドレスにジャンプします。`,
+  },
 
   // --- DAT (動的アドレス変換) ---
   0x40: {
@@ -237,4 +271,13 @@ for (const def of Object.values(InstructionSet)) {
     MnemonicMap[def.mnemonic] = [];
   }
   MnemonicMap[def.mnemonic].push(def);
+}
+
+// 'addr' タイプなどの一般的なパターンより、'reg' などの具体的なパターンを優先してマッチさせるためのソート
+for (const mnemonic of Object.keys(MnemonicMap)) {
+  MnemonicMap[mnemonic].sort((a, b) => {
+    if (a.operandType === 'addr' && b.operandType !== 'addr') return 1;
+    if (a.operandType !== 'addr' && b.operandType === 'addr') return -1;
+    return 0;
+  });
 }
