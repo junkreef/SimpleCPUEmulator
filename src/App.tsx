@@ -119,14 +119,41 @@ function App() {
     isFirstStepAfterResumeRef.current = false;
 
     // 通常通りタイマーをセット
-    const interval = 1000 / speedHz;
+    const isUnlimited = speedHz > 40;
+    const interval = isUnlimited ? 4 : 1000 / speedHz;
     const timer = setTimeout(() => {
       setExecState((prev) => {
         if (prev.cpu.halted || prev.cpu.ef) {
           setIsAutoRunning(false);
           return prev;
         }
-        return stepCPU(prev); // 1フェーズ(FETCH/DECODE/EXECUTE)実行
+
+        if (isUnlimited) {
+          // 無制限モード: 1回のタイマー周期で複数フェーズ（最大100フェーズ）を実行して超高速化
+          let state = prev;
+          for (let i = 0; i < 100; i++) {
+            state = stepCPU(state);
+            if (state.cpu.halted || state.cpu.ef) {
+              setIsAutoRunning(false);
+              break;
+            }
+            // 実行中のブレークポイント判定
+            if (state.phase === 'FETCH') {
+              const trans = translateAddress(state.cpu, state.cpu.pc);
+              if (trans.success && trans.physicalAddr !== null) {
+                const physAddr = trans.physicalAddr;
+                const line = addressToLineMap[physAddr];
+                if (line !== undefined && breakpoints.has(line)) {
+                  setIsAutoRunning(false);
+                  break;
+                }
+              }
+            }
+          }
+          return state;
+        } else {
+          return stepCPU(prev); // 1フェーズ(FETCH/DECODE/EXECUTE)実行
+        }
       });
     }, interval);
 

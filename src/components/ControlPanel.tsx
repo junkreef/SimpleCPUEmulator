@@ -124,16 +124,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
           <span>クロック周波数 (実行速度):</span>
-          <span className="digital-display glow-text-cyan">{speedHz.toFixed(1)} Hz</span>
+          <span className="digital-display glow-text-cyan">
+            {speedHz > 40 ? '無制限 (MAX)' : `${speedHz.toFixed(1)} Hz`}
+          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <input
             type="range"
             min="0.5"
-            max="10"
+            max="41"
             step="0.5"
-            value={speedHz}
-            onChange={(e) => onChangeSpeed(parseFloat(e.target.value))}
+            value={speedHz > 40 ? 41 : speedHz}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value);
+              onChangeSpeed(val > 40 ? 999 : val);
+            }}
             disabled={isAutoRunning}
             style={{
               flex: 1,
