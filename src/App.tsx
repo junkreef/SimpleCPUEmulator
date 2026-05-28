@@ -126,7 +126,7 @@ function App() {
           setIsAutoRunning(false);
           return prev;
         }
-        return stepInstruction(prev); // 1命令実行
+        return stepCPU(prev); // 1フェーズ(FETCH/DECODE/EXECUTE)実行
       });
     }, interval);
 
