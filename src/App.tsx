@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { CPUExecutionState } from './emulator/types';
-import { initCPUExecutionState, stepCPU, stepInstruction } from './emulator/cpu';
+import { initCPUExecutionState, stepCPU, stepInstruction, translateAddress } from './emulator/cpu';
 import { assemble } from './emulator/assembler';
 import { CodeEditor } from './components/CodeEditor';
 import { ControlPanel } from './components/ControlPanel';
@@ -14,6 +14,11 @@ function App() {
   const [hasProgram, setHasProgram] = useState(false);
   const [currentCode, setCurrentCode] = useState('');
 
+  const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set());
+  const [addressToLineMap, setAddressToLineMap] = useState<Record<number, number>>({});
+
+  const skipNextBreakpointRef = useRef(false);
+
   // アセンブル完了時のハンドラー
   const handleAssemble = (code: string) => {
     setCurrentCode(code);
@@ -21,8 +26,20 @@ function App() {
     if (result.success) {
       const newState = initCPUExecutionState(result.rom);
       setExecState(newState);
+      setAddressToLineMap(result.addressToLineMap);
       setHasProgram(true);
       setIsAutoRunning(false);
+
+      // ブレークポイントをクリーンアップ (無効な行数を除去)
+      const maxLine = code.split('\n').length;
+      setBreakpoints((prev) => {
+        const next = new Set<number>();
+        prev.forEach((ln) => {
+          if (ln <= maxLine) next.add(ln);
+        });
+        return next;
+      });
+
       return { success: true, errors: [] };
     } else {
       setHasProgram(false);
@@ -52,6 +69,19 @@ function App() {
     }
   };
 
+  // ブレークポイントのON/OFF切り替え
+  const handleToggleBreakpoint = (line: number) => {
+    setBreakpoints((prev) => {
+      const next = new Set(prev);
+      if (next.has(line)) {
+        next.delete(line);
+      } else {
+        next.add(line);
+      }
+      return next;
+    });
+  };
+
   // 自動実行の管理 (useEffect と setTimeout による再帰タイマー)
   useEffect(() => {
     if (!isAutoRunning) return;
@@ -69,12 +99,47 @@ function App() {
           setIsAutoRunning(false);
           return prev;
         }
+
+        // --- ブレークポイント判定 ---
+        // FETCHフェーズの開始時で、PCアドレスに対応する物理アドレスのアセンブリ行番号が breakpoints に含まれる場合
+        if (prev.phase === 'FETCH') {
+          const trans = translateAddress(prev.cpu, prev.cpu.pc);
+          if (trans.success && trans.physicalAddr !== null) {
+            const physAddr = trans.physicalAddr;
+            const line = addressToLineMap[physAddr];
+
+            if (line !== undefined && breakpoints.has(line)) {
+              if (skipNextBreakpointRef.current) {
+                // 一時停止からの再開(Resume)直後の場合は、現在のブレークポイントを1回だけスルーして進む
+                skipNextBreakpointRef.current = false;
+              } else {
+                // 自動実行を一時停止し、状態は更新せずそのまま戻る
+                setIsAutoRunning(false);
+                return prev;
+              }
+            }
+          }
+        }
+
+        // 実行を進めるので、スキップフラグをリセット
+        skipNextBreakpointRef.current = false;
         return stepInstruction(prev); // 1命令実行
       });
     }, interval);
 
     return () => clearTimeout(timer);
-  }, [isAutoRunning, speedHz, execState.cpu.pc, execState.cpu.halted, execState.cpu.ef]);
+  }, [isAutoRunning, speedHz, execState.cpu.pc, execState.cpu.halted, execState.cpu.ef, breakpoints, addressToLineMap]);
+
+  // 現在実行中の命令が対応するアセンブリ行を特定
+  const getCurrentLine = () => {
+    if (execState.cpu.halted || execState.cpu.ef) return null;
+    const trans = translateAddress(execState.cpu, execState.cpu.pc);
+    if (trans.success && trans.physicalAddr !== null) {
+      return addressToLineMap[trans.physicalAddr] || null;
+    }
+    return null;
+  };
+  const currentLine = getCurrentLine();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'var(--bg-main)', overflow: 'hidden' }}>
@@ -158,6 +223,9 @@ function App() {
           <CodeEditor
             onAssemble={handleAssemble}
             isCpuRunning={isAutoRunning}
+            breakpoints={breakpoints}
+            onToggleBreakpoint={handleToggleBreakpoint}
+            currentLine={currentLine}
           />
         </section>
 
@@ -180,7 +248,12 @@ function App() {
                 onStepCPU={handleStepCPU}
                 onStepInstruction={handleStepInstruction}
                 onReset={handleReset}
-                onToggleAuto={() => setIsAutoRunning(!isAutoRunning)}
+                onToggleAuto={() => {
+                  if (!isAutoRunning) {
+                    skipNextBreakpointRef.current = true;
+                  }
+                  setIsAutoRunning(!isAutoRunning);
+                }}
                 isAutoRunning={isAutoRunning}
                 speedHz={speedHz}
                 onChangeSpeed={setSpeedHz}

@@ -12,6 +12,8 @@ export interface AssembleResult {
   rom: Uint8Array;
   errors: AssembleError[];
   labelMap: Record<string, number>;
+  addressToLineMap: Record<number, number>;
+  lineToAddressMap: Record<number, number>;
 }
 
 // 数値または16進数のパース
@@ -155,6 +157,8 @@ export const assemble = (sourceCode: string): AssembleResult => {
   const errors: AssembleError[] = [];
   const labelMap: Record<string, number> = {};
   const rom = new Uint8Array(256);
+  const addressToLineMap: Record<number, number> = {};
+  const lineToAddressMap: Record<number, number> = {};
 
   const lines = sourceCode.split('\n');
   const parsedLines: ParsedLine[] = [];
@@ -199,7 +203,7 @@ export const assemble = (sourceCode: string): AssembleResult => {
   }
 
   if (errors.length > 0) {
-    return { success: false, rom, errors, labelMap };
+    return { success: false, rom, errors, labelMap, addressToLineMap, lineToAddressMap };
   }
 
   // --- パス1: アドレスの割当とラベルマップの構築 ---
@@ -267,7 +271,7 @@ export const assemble = (sourceCode: string): AssembleResult => {
   }
 
   if (errors.length > 0) {
-    return { success: false, rom, errors, labelMap };
+    return { success: false, rom, errors, labelMap, addressToLineMap, lineToAddressMap };
   }
 
   // --- パス2: バイナリへのエンコードと書き込み ---
@@ -331,6 +335,10 @@ export const assemble = (sourceCode: string): AssembleResult => {
       break;
     }
 
+    // 双方向行マップを記録
+    addressToLineMap[writePtr] = pl.lineNumber;
+    lineToAddressMap[pl.lineNumber] = writePtr;
+
     // ROMへの書き込み
     rom[writePtr] = matchedDef.opcode;
     for (let b = 0; b < enc.bytes.length; b++) {
@@ -345,5 +353,7 @@ export const assemble = (sourceCode: string): AssembleResult => {
     rom,
     errors,
     labelMap,
+    addressToLineMap,
+    lineToAddressMap,
   };
 };

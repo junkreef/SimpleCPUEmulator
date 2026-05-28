@@ -5,6 +5,9 @@ interface CodeEditorProps {
   onAssemble: (code: string) => { success: boolean; errors: AssembleError[] };
   initialCode?: string;
   isCpuRunning: boolean;
+  breakpoints: Set<number>;
+  onToggleBreakpoint: (line: number) => void;
+  currentLine: number | null;
 }
 
 const PRESETS = [
@@ -221,6 +224,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   onAssemble,
   initialCode = PRESETS[0].code,
   isCpuRunning,
+  breakpoints,
+  onToggleBreakpoint,
+  currentLine,
 }) => {
   const [code, setCode] = useState(initialCode);
   const [errors, setErrors] = useState<AssembleError[]>([]);
@@ -314,13 +320,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         <div
           ref={lineNumbersRef}
           style={{
-            width: '40px',
+            width: '48px', // ブレークポイントインジケータ表示のために少し幅を広げる（40px -> 48px）
             background: 'rgba(10, 18, 36, 0.5)',
             borderRight: '1px solid var(--border-color)',
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'flex-end',
-            padding: '12px 8px',
+            alignItems: 'stretch',
+            padding: '12px 0', // パディング左右を0にして、行要素側でパディングを管理する
             color: 'var(--color-text-muted)',
             fontFamily: 'var(--font-mono)',
             fontSize: '0.85rem',
@@ -329,11 +335,46 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             boxSizing: 'border-box',
           }}
         >
-          {code.split('\n').map((_, index) => (
-            <div key={index} style={{ height: '22px', lineHeight: '22px' }}>
-              {index + 1}
-            </div>
-          ))}
+          {code.split('\n').map((_, index) => {
+            const lineNum = index + 1;
+            const hasBreakpoint = breakpoints.has(lineNum);
+            const isCurrent = currentLine === lineNum;
+            return (
+              <div
+                key={index}
+                onClick={() => !isCpuRunning && onToggleBreakpoint(lineNum)}
+                style={{
+                  height: '22px',
+                  lineHeight: '22px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0 6px 0 8px',
+                  cursor: isCpuRunning ? 'not-allowed' : 'pointer',
+                  background: isCurrent ? 'rgba(0, 210, 255, 0.15)' : 'transparent',
+                  borderLeft: isCurrent ? '3px solid var(--color-primary)' : '3px solid transparent',
+                  transition: 'background 0.2s, border-left 0.2s',
+                }}
+                title={isCpuRunning ? undefined : "クリックしてブレークポイントを切り替え"}
+              >
+                {/* ブレークポイントインジケータ */}
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: hasBreakpoint ? 'var(--color-secondary)' : 'transparent',
+                    boxShadow: hasBreakpoint ? '0 0 8px var(--color-secondary)' : 'none',
+                    display: 'inline-block',
+                    transition: 'background 0.2s, box-shadow 0.2s',
+                  }}
+                />
+                <span style={{ fontSize: '0.8rem', opacity: isCurrent ? 1 : 0.6, color: isCurrent ? 'var(--color-primary)' : 'inherit', fontWeight: isCurrent ? 700 : 'normal' }}>
+                  {lineNum}
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         {/* テキスト編集エリア */}
