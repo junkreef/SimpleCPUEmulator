@@ -1,13 +1,5 @@
-import { CPUState, CPUExecutionState, DATEntry } from './types';
+import { CPUState, CPUExecutionState } from './types';
 import { InstructionSet } from './instructionSet';
-
-// 初期DATテーブルの生成 (4エントリ)
-const createDefaultDATTable = (): DATEntry[] => [
-  { valid: false, pfn: 0 },
-  { valid: false, pfn: 0 },
-  { valid: false, pfn: 0 },
-  { valid: false, pfn: 0 },
-];
 
 // CPUの初期状態を生成
 export const initCPUState = (romData?: Uint8Array): CPUState => {
@@ -25,12 +17,12 @@ export const initCPUState = (romData?: Uint8Array): CPUState => {
     registers: [0, 0, 0, 0], // R0, R1, R2, R3
     pc: 0,
     datr: 0,
+    cr1: 0, // コントロールレジスタ1の初期値
     zf: false,
     ef: false,
     halted: false,
     ram,
     rom,
-    datTable: createDefaultDATTable(),
   };
 };
 
@@ -76,28 +68,33 @@ export const translateAddress = (
       success: true,
     };
   } else {
-    // DAT有効: ページテーブル変換
-    const entry = cpu.datTable[vpn];
-    if (entry.valid) {
-      const physicalAddr = (entry.pfn << 6) | offset;
+    // DAT有効: RAM上のページテーブル変換
+    // ページテーブルは物理RAMの (cpu.cr1 * 64) から始まる4バイトに格納されている
+    const tableAddr = (cpu.cr1 << 6) + vpn;
+    const entryByte = cpu.ram[tableAddr];
+    const valid = (entryByte & 0x80) !== 0; // 最上位ビットがVフラグ
+    const pfn = entryByte & 0x07;           // 下位3ビットが物理フレーム番号 (0 ~ 7)
+
+    if (valid) {
+      const physicalAddr = (pfn << 6) | offset;
       return {
         virtualAddr,
         physicalAddr,
         vpn,
         offset,
         valid: true,
-        pfn: entry.pfn,
+        pfn,
         success: true,
       };
     } else {
-      // 変換例外
+      // 変換例外 (ページフォルト)
       return {
         virtualAddr,
         physicalAddr: null,
         vpn,
         offset,
         valid: false,
-        pfn: entry.pfn,
+        pfn,
         success: false,
       };
     }
@@ -212,6 +209,15 @@ export const decodeOperands = (
       };
     }
 
+    case 'cr_reg': {
+      // 2バイト目: [Reserved: 4bit][Rs: 4bit]
+      const rs = args[0] & 0x0F;
+      return {
+        operands: [rs],
+        operandText: `CR1, R${rs}`,
+      };
+    }
+
     default:
       return { operands: [], operandText: '' };
   }
@@ -229,7 +235,6 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
 
   const nextState = { ...execState, cpu: { ...execState.cpu } };
   nextState.cpu.registers = [...execState.cpu.registers];
-  nextState.cpu.datTable = execState.cpu.datTable.map((e) => ({ ...e }));
   // RAMとROMは参照そのまま（破壊的変更を行うが、React状態遷移のためにシャローコピーは上位で行う）
 
   // アクセス履歴をリセット
@@ -241,16 +246,22 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
   switch (execState.phase) {
     case 'FETCH': {
       const pc = nextState.cpu.pc;
-      if (pc >= 256) {
-        nextState.cpu.halted = true;
+
+      // PC (仮想アドレス) をDAT変換して物理アドレスを求める
+      const trans = translateAddress(nextState.cpu, pc);
+      nextState.addressTranslationLog = trans;
+      nextState.lastAccessedRamAddr = trans.physicalAddr;
+
+      if (!trans.success || trans.physicalAddr === null) {
+        // 命令フェッチ中のDAT変換例外 (ページフォルト)
         nextState.cpu.ef = true;
+        nextState.cpu.halted = true;
         nextState.phase = 'FAULT';
         return nextState;
       }
 
-      // ROMからオペコードを読み取る
-      const opcode = nextState.cpu.rom[pc];
-      nextState.lastAccessedRomAddr = pc;
+      // 物理RAMからオペコードをフェッチ
+      const opcode = nextState.cpu.ram[trans.physicalAddr];
 
       const instDef = InstructionSet[opcode];
       if (!instDef) {
@@ -261,12 +272,19 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
         return nextState;
       }
 
-      // 命令に必要なバイト数分フェッチ
+      // 命令に必要なバイト数分、各バイトごとにDAT変換を適用してフェッチ
       const bytesToFetch = instDef.bytes;
       const fetchBuffer: number[] = [];
       for (let i = 0; i < bytesToFetch; i++) {
-        const addr = (pc + i) & 0xFF;
-        fetchBuffer.push(nextState.cpu.rom[addr]);
+        const vAddr = (pc + i) & 0xFF;
+        const t = translateAddress(nextState.cpu, vAddr);
+        if (!t.success || t.physicalAddr === null) {
+          nextState.cpu.ef = true;
+          nextState.cpu.halted = true;
+          nextState.phase = 'FAULT';
+          return nextState;
+        }
+        fetchBuffer.push(nextState.cpu.ram[t.physicalAddr]);
       }
 
       nextState.fetchBuffer = fetchBuffer;

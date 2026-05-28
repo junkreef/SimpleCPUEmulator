@@ -58,9 +58,12 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
   // どの物理フレームがどの仮想ページにマッピングされているかを逆引きする
   const getFrameMapping = (frameIdx: number): { pageIdx: number; valid: boolean } | null => {
     if (cpu.datr === 0) return null; // DAT無効時はマッピング非表示
+    const baseAddr = cpu.cr1 << 6;
     for (let p = 0; p < 4; p++) {
-      const entry = cpu.datTable[p];
-      if (entry.valid && entry.pfn === frameIdx) {
+      const entryByte = cpu.ram[baseAddr + p];
+      const valid = (entryByte & 0x80) !== 0;
+      const pfn = entryByte & 0x07;
+      if (valid && pfn === frameIdx) {
         return { pageIdx: p, valid: true };
       }
     }
@@ -70,6 +73,46 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
   // PCに対応する物理アドレスの算出
   const pcTrans = translateAddress(cpu, cpu.pc);
   const pcPhys = pcTrans.success ? pcTrans.physicalAddr : null;
+
+  // 仮想アドレスから変換情報を算出するヘルパー
+  const getVAddrInfo = (vAddr: number) => {
+    const pageIdx = Math.floor(vAddr / 64);
+    const offset = vAddr % 64;
+
+    if (cpu.datr === 0) {
+      return {
+        valid: true,
+        pfn: pageIdx,
+        physAddr: vAddr,
+        value: cpu.ram[vAddr],
+        color: PAGE_COLORS[pageIdx],
+      };
+    } else {
+      const tableAddr = (cpu.cr1 << 6) + pageIdx;
+      const entryByte = cpu.ram[tableAddr];
+      const valid = (entryByte & 0x80) !== 0;
+      const pfn = entryByte & 0x07;
+
+      if (valid) {
+        const physAddr = (pfn << 6) | offset;
+        return {
+          valid: true,
+          pfn,
+          physAddr,
+          value: cpu.ram[physAddr],
+          color: PAGE_COLORS[pageIdx],
+        };
+      } else {
+        return {
+          valid: false,
+          pfn: null,
+          physAddr: null,
+          value: null,
+          color: 'rgba(255, 255, 255, 0.1)',
+        };
+      }
+    }
+  };
 
   // 現在デコードまたはフェッチ中の命令のバイト数
   const currentInstBytes = decoded ? decoded.bytes : (fetchBuffer.length > 0 ? fetchBuffer.length : 1);
@@ -82,7 +125,7 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
 
       <div style={{ flex: 1, position: 'relative', background: '#02050b', borderRadius: '8px', border: '1px solid rgba(0, 210, 255, 0.05)', overflow: 'hidden' }}>
         <svg
-          viewBox="0 0 820 440"
+          viewBox="0 0 1060 440"
           width="100%"
           height="100%"
           style={{ display: 'block' }}
@@ -451,6 +494,18 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
             <text x="351" y="200" textAnchor="middle" fill="var(--color-text-muted)" fontSize="7" fontWeight="800" transform="rotate(-90 351 200)">MUX 2</text>
           </g>
 
+          {/* (8.5) Control Register 1 (CR1 / PASCE) */}
+          <g transform="translate(400, 115)">
+            <rect x="0" y="0" width="110" height="35" rx="4" fill="url(#blueGrad)" stroke={cpu.datr === 1 ? 'var(--color-secondary)' : 'var(--border-color)'} strokeWidth="1.5" />
+            <text x="55" y="11" textAnchor="middle" fill="var(--color-text-muted)" fontSize="8" fontWeight="700">CR1 (PASCE)</text>
+            <text x="55" y="27" textAnchor="middle" fill="var(--color-secondary)" className="digital-display" fontSize="10" fontWeight="700">
+              FRAME {cpu.cr1} (0x{toHex(cpu.cr1 << 6, 3)})
+            </text>
+          </g>
+
+          {/* CR1 ➔ DAT TABLE への制御線 */}
+          <path d="M 455 150 L 455 165" fill="none" stroke={cpu.datr === 1 ? 'var(--color-secondary)' : 'rgba(255,255,255,0.08)'} strokeWidth="2.5" className={cpu.datr === 1 ? 'animate-dash-flow' : ''} />
+
           {/* (9) DAT TABLE (MMU 赤パネル) */}
           <g transform="translate(400, 165)">
             <rect x="0" y="0" width="110" height="80" rx="6" fill="url(#blueGrad)" stroke={cpu.datr === 1 ? 'var(--color-secondary)' : 'var(--border-color)'} strokeWidth="1.5" />
@@ -465,18 +520,23 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
 
             {/* エントリ */}
             {Array.from({ length: 4 }).map((_, p) => {
-              const entry = cpu.datTable[p];
+              // CR1が指す物理RAM上のページテーブルエントリを読み込む
+              const tableAddr = (cpu.cr1 << 6) + p;
+              const entryByte = cpu.ram[tableAddr];
+              const valid = (entryByte & 0x80) !== 0;
+              const pfn = entryByte & 0x07;
+
               const isSelected = hasMemAccess && addressTranslationLog?.vpn === p;
-              const cellColor = entry.valid ? 'var(--color-success)' : 'var(--color-text-muted)';
+              const cellColor = valid ? 'var(--color-success)' : 'var(--color-text-muted)';
               return (
                 <g key={p} transform={`translate(6, ${31 + p * 11})`} fontSize="7" fontFamily="var(--font-mono)">
                   {isSelected && (
                     <rect x="-2" y="-8" width="102" height="10" fill="rgba(255, 0, 127, 0.15)" stroke="var(--color-secondary)" strokeWidth="0.5" />
                   )}
                   <text x="5" fill="white" fontWeight={isSelected ? 700 : 400}>P{p}({p * 64})</text>
-                  <text x="50" fill={cellColor} fontWeight="700">{entry.valid ? '1' : '0'}</text>
-                  <text x="65" fill={entry.valid ? 'white' : 'var(--color-text-muted)'}>
-                    {entry.valid ? `F${entry.pfn}(${toHex(entry.pfn * 64)})` : '--'}
+                  <text x="50" fill={cellColor} fontWeight="700">{valid ? '1' : '0'}</text>
+                  <text x="65" fill={valid ? 'white' : 'var(--color-text-muted)'}>
+                    {valid ? `F${pfn}(${toHex(pfn * 64)})` : '--'}
                   </text>
                 </g>
               );
@@ -498,155 +558,315 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
           </g>
 
           {/* ========================================================================= */}
-          {/* 3. HTML埋め込み: <foreignObject> によるスクロール可能な物理RAMモニター */}
+          {/* 3. HTML埋め込み: <foreignObject> による物理RAM ＆ 仮想RAMモニター横並び配置 */}
           {/* ========================================================================= */}
-          <foreignObject x="580" y="10" width="230" height="420">
+          <foreignObject x="580" y="10" width="470" height="420">
             <div style={{
               width: '100%',
               height: '100%',
-              background: 'rgba(5, 8, 17, 0.65)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '6px',
               display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
+              gap: '10px',
               fontFamily: 'var(--font-sans)',
               color: 'var(--color-text-main)',
             }}>
-              {/* RAMモニターヘッダー */}
+              {/* === 左半分: PHYSICAL RAM (512B) === */}
               <div style={{
-                padding: '6px 10px',
-                borderBottom: '1px solid var(--border-color)',
-                background: 'rgba(10, 18, 36, 0.7)',
+                flex: 1,
+                background: 'rgba(5, 8, 17, 0.65)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexShrink: 0,
+                flexDirection: 'column',
+                overflow: 'hidden',
               }}>
-                <span style={{ color: 'var(--color-success)', fontWeight: 700, fontSize: '0.68rem', letterSpacing: '0.5px' }}>
-                  PHYSICAL RAM (512B)
-                </span>
-                <span style={{ fontSize: '0.55rem', color: 'var(--color-text-muted)' }}>
-                  00-FF:ROMコピー
-                </span>
-              </div>
+                {/* 物理RAMモニターヘッダー */}
+                <div style={{
+                  padding: '6px 10px',
+                  borderBottom: '1px solid var(--border-color)',
+                  background: 'rgba(10, 18, 36, 0.7)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexShrink: 0,
+                }}>
+                  <span style={{ color: 'var(--color-success)', fontWeight: 700, fontSize: '0.65rem', letterSpacing: '0.5px' }}>
+                    PHYSICAL RAM (512B)
+                  </span>
+                  <span style={{ fontSize: '0.52rem', color: 'var(--color-text-muted)' }}>
+                    00-FF:ROMコピー
+                  </span>
+                </div>
 
-              {/* セル表示エリア (スクロール可能) */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px', background: '#020408' }} className="ram-scroll-container">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                  {Array.from({ length: 64 }).map((_, rowIdx) => {
-                    const startAddr = rowIdx * 8;
-                    const frameIdx = Math.floor(startAddr / 64);
-                    const mapping = getFrameMapping(frameIdx);
-                    const neonColor = mapping ? PAGE_COLORS[mapping.pageIdx] : 'transparent';
-                    const isFrameStart = startAddr % 64 === 0;
+                {/* 物理RAMセル表示エリア */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '6px 6px', background: '#020408' }} className="ram-scroll-container">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {Array.from({ length: 64 }).map((_, rowIdx) => {
+                      const startAddr = rowIdx * 8;
+                      const frameIdx = Math.floor(startAddr / 64);
+                      const isPageTableFrame = cpu.datr === 1 && frameIdx === cpu.cr1;
+                      const mapping = getFrameMapping(frameIdx);
+                      const neonColor = isPageTableFrame ? '#cc00ff' : (mapping ? PAGE_COLORS[mapping.pageIdx] : 'transparent');
+                      const isFrameStart = startAddr % 64 === 0;
 
-                    return (
-                      <React.Fragment key={rowIdx}>
-                        {/* 64バイト境界での仕切り */}
-                        {isFrameStart && (
+                      return (
+                        <React.Fragment key={rowIdx}>
+                          {isFrameStart && (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              marginTop: frameIdx > 0 ? '6px' : '0px',
+                              marginBottom: '2px',
+                              paddingTop: frameIdx > 0 ? '4px' : '0px',
+                              borderTop: frameIdx > 0 ? '1px dashed rgba(255, 255, 255, 0.08)' : 'none',
+                            }}>
+                              <span style={{ fontSize: '0.58rem', fontWeight: 800, color: isPageTableFrame ? '#cc00ff' : (mapping ? neonColor : 'var(--color-text-muted)') }}>
+                                F{frameIdx} (0x{toHex(startAddr, 3)})
+                              </span>
+                              {isPageTableFrame && (
+                                <span style={{ fontSize: '0.52rem', background: 'rgba(180, 0, 255, 0.2)', color: '#cc00ff', border: '1px solid rgba(180, 0, 255, 0.4)', padding: '0 3px', borderRadius: '1.5px', fontWeight: 700 }}>
+                                  PAGE TABLE
+                                </span>
+                              )}
+                              {mapping && !isPageTableFrame && (
+                                <span style={{ fontSize: '0.52rem', background: `${neonColor}22`, color: neonColor, border: `1px solid ${neonColor}55`, padding: '0 3px', borderRadius: '1.5px', fontWeight: 700 }}>
+                                  PAGE {mapping.pageIdx}
+                                </span>
+                              )}
+                              {!mapping && !isPageTableFrame && (
+                                <span style={{ fontSize: '0.52rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                  UNMAPPED
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '4px',
-                            marginTop: frameIdx > 0 ? '6px' : '0px',
-                            marginBottom: '2px',
-                            paddingTop: frameIdx > 0 ? '4px' : '0px',
-                            borderTop: frameIdx > 0 ? '1px dashed rgba(255, 255, 255, 0.08)' : 'none',
+                            padding: '1px 0',
+                            borderLeft: isPageTableFrame
+                              ? '2.5px solid #cc00ff'
+                              : (mapping ? `1.5px solid ${neonColor}` : '1.5px solid rgba(255, 255, 255, 0.04)'),
+                            background: isPageTableFrame
+                              ? 'rgba(180, 0, 255, 0.03)'
+                              : (mapping ? `${neonColor}03` : 'transparent'),
                           }}>
-                            <span style={{ fontSize: '0.58rem', fontWeight: 800, color: mapping ? neonColor : 'var(--color-text-muted)' }}>
-                              F{frameIdx} (0x{toHex(startAddr, 3)})
+                            <span style={{ width: '32px', color: isPageTableFrame ? '#cc00ff' : (mapping ? neonColor : 'var(--color-text-muted)'), fontSize: '0.58rem', fontFamily: 'var(--font-mono)' }}>
+                              {toHex(startAddr, 3)}:
                             </span>
-                            {mapping ? (
-                              <span style={{ fontSize: '0.52rem', background: `${neonColor}22`, color: neonColor, border: `1px solid ${neonColor}55`, padding: '0 3px', borderRadius: '1.5px', fontWeight: 700 }}>
-                                PAGE {mapping.pageIdx}
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: '0.52rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                UNMAPPED
-                              </span>
-                            )}
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 19px)', gap: '2px', flex: 1 }}>
+                              {Array.from({ length: 8 }).map((_, cellIdx) => {
+                                const physAddr = startAddr + cellIdx;
+                                const val = cpu.ram[physAddr];
+
+                                const isWrite = lastWriteRamAddr === physAddr;
+                                const isAccess = lastAccessedRamAddr === physAddr;
+                                const isPcHighlight = pcPhys !== null && (physAddr >= pcPhys && physAddr < pcPhys + currentInstBytes);
+
+                                let cellBg = 'rgba(10, 18, 36, 0.2)';
+                                let cellBorder = '1px solid rgba(255, 255, 255, 0.02)';
+                                let cellColor = isPageTableFrame ? '#cc00ff' : (mapping ? neonColor : 'var(--color-text-main)');
+                                let cellShadow = 'none';
+
+                                if (isWrite) {
+                                  cellBg = 'rgba(255, 0, 127, 0.25)';
+                                  cellBorder = '1px solid var(--color-secondary)';
+                                  cellColor = 'var(--color-secondary)';
+                                  cellShadow = '0 0 3px var(--color-secondary)';
+                                } else if (isAccess) {
+                                  cellBg = 'rgba(255, 170, 0, 0.25)';
+                                  cellBorder = '1px solid var(--color-warning)';
+                                  cellColor = 'var(--color-warning)';
+                                  cellShadow = '0 0 3px var(--color-warning)';
+                                } else if (isPcHighlight) {
+                                  cellBg = 'rgba(0, 255, 170, 0.2)';
+                                  cellBorder = '1px solid var(--color-success)';
+                                  cellColor = 'var(--color-success)';
+                                  cellShadow = '0 0 3px var(--color-success)';
+                                } else if (isPageTableFrame) {
+                                  cellBg = 'rgba(180, 0, 255, 0.12)';
+                                  cellBorder = '1px solid rgba(180, 0, 255, 0.2)';
+                                } else {
+                                  cellBg = mapping ? `${neonColor}11` : 'rgba(255, 255, 255, 0.04)';
+                                }
+
+                                return (
+                                  <div
+                                    key={cellIdx}
+                                    title={`Phys Addr: 0x${toHex(physAddr, 3)}\nValue: ${val} (0x${toHex(val)})`}
+                                    style={{
+                                      width: '19px',
+                                      height: '14px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      borderRadius: '1.5px',
+                                      background: cellBg,
+                                      border: cellBorder,
+                                      color: cellColor,
+                                      fontWeight: 700,
+                                      boxShadow: cellShadow,
+                                      fontSize: '0.55rem',
+                                      fontFamily: 'var(--font-mono)',
+                                      transition: 'all 0.1s',
+                                    }}
+                                  >
+                                    {toHex(val)}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
 
-                        {/* 行 */}
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          padding: '1px 0',
-                          borderLeft: mapping ? `1.5px solid ${neonColor}` : '1.5px solid rgba(255, 255, 255, 0.04)',
-                          background: mapping ? `${neonColor}03` : 'transparent',
-                        }}>
-                          {/* 行アドレス */}
-                          <span style={{ width: '32px', color: mapping ? neonColor : 'var(--color-text-muted)', fontSize: '0.58rem', fontFamily: 'var(--font-mono)' }}>
-                            {toHex(startAddr, 3)}:
-                          </span>
+              {/* === 右半分: VIRTUAL RAM (256B) === */}
+              <div style={{
+                flex: 1,
+                background: 'rgba(5, 8, 17, 0.65)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}>
+                {/* 仮想RAMモニターヘッダー */}
+                <div style={{
+                  padding: '6px 10px',
+                  borderBottom: '1px solid var(--border-color)',
+                  background: 'rgba(10, 18, 36, 0.7)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexShrink: 0,
+                }}>
+                  <span style={{ color: 'var(--color-secondary)', fontWeight: 700, fontSize: '0.65rem', letterSpacing: '0.5px' }}>
+                    VIRTUAL RAM (256B)
+                  </span>
+                  <span style={{ fontSize: '0.52rem', color: 'var(--color-text-muted)' }}>
+                    PC=0x{toHex(cpu.pc)}
+                  </span>
+                </div>
 
-                          {/* 8個のセル */}
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 19px)', gap: '2px', flex: 1 }}>
-                            {Array.from({ length: 8 }).map((_, cellIdx) => {
-                              const physAddr = startAddr + cellIdx;
-                              const val = cpu.ram[physAddr];
+                {/* 仮想RAMセル表示エリア */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '6px 6px', background: '#020408' }} className="ram-scroll-container">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {Array.from({ length: 32 }).map((_, rowIdx) => {
+                      const startVAddr = rowIdx * 8;
+                      const pageIdx = Math.floor(startVAddr / 64);
+                      const isPageStart = startVAddr % 64 === 0;
+                      const tableAddr = (cpu.cr1 << 6) + pageIdx;
+                      const entryByte = cpu.ram[tableAddr];
+                      const isPageValid = cpu.datr === 0 || (entryByte & 0x80) !== 0;
+                      const pagePfn = cpu.datr === 0 ? pageIdx : (entryByte & 0x07);
+                      const pageColor = PAGE_COLORS[pageIdx];
 
-                              const isWrite = lastWriteRamAddr === physAddr;
-                              const isAccess = lastAccessedRamAddr === physAddr;
-                              const isPcHighlight = pcPhys !== null && (physAddr >= pcPhys && physAddr < pcPhys + currentInstBytes);
+                      return (
+                        <React.Fragment key={rowIdx}>
+                          {isPageStart && (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              marginTop: pageIdx > 0 ? '6px' : '0px',
+                              marginBottom: '2px',
+                              paddingTop: pageIdx > 0 ? '4px' : '0px',
+                              borderTop: pageIdx > 0 ? '1px dashed rgba(255, 255, 255, 0.08)' : 'none',
+                            }}>
+                              <span style={{ fontSize: '0.55rem', fontWeight: 800, color: pageColor }}>
+                                P{pageIdx} (0x{toHex(startVAddr)})
+                              </span>
+                              {isPageValid ? (
+                                <span style={{ fontSize: '0.5rem', background: `${pageColor}15`, color: pageColor, border: `1px solid ${pageColor}35`, padding: '0 2px', borderRadius: '1.5px', fontWeight: 700 }}>
+                                  ➔ F{pagePfn}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.5rem', background: 'rgba(255, 0, 127, 0.1)', color: 'var(--color-secondary)', border: '1px solid rgba(255, 0, 127, 0.3)', padding: '0 2px', borderRadius: '1.5px', fontWeight: 700 }}>
+                                  FAULT
+                                </span>
+                              )}
+                            </div>
+                          )}
 
-                              let cellBg = 'rgba(10, 18, 36, 0.2)';
-                              let cellBorder = '1px solid rgba(255, 255, 255, 0.02)';
-                              let cellColor = mapping ? neonColor : 'var(--color-text-main)';
-                              let cellShadow = 'none';
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '1px 0',
+                            borderLeft: isPageValid ? `2px solid ${pageColor}` : '2px solid rgba(255, 255, 255, 0.04)',
+                            background: isPageValid ? `${pageColor}02` : 'transparent',
+                          }}>
+                            <span style={{ width: '24px', color: isPageValid ? pageColor : 'var(--color-text-muted)', fontSize: '0.55rem', fontFamily: 'var(--font-mono)' }}>
+                              {toHex(startVAddr)}:
+                            </span>
 
-                              if (isWrite) {
-                                cellBg = 'rgba(255, 0, 127, 0.25)';
-                                cellBorder = '1px solid var(--color-secondary)';
-                                cellColor = 'var(--color-secondary)';
-                                cellShadow = '0 0 3px var(--color-secondary)';
-                              } else if (isAccess) {
-                                cellBg = 'rgba(255, 170, 0, 0.25)';
-                                cellBorder = '1px solid var(--color-warning)';
-                                cellColor = 'var(--color-warning)';
-                                cellShadow = '0 0 3px var(--color-warning)';
-                              } else if (isPcHighlight) {
-                                cellBg = 'rgba(0, 255, 170, 0.2)';
-                                cellBorder = '1px solid var(--color-success)';
-                                cellColor = 'var(--color-success)';
-                                cellShadow = '0 0 3px var(--color-success)';
-                              } else {
-                                // ユーザー様の「00も含め、一律で明るい背景を適用する」というご要望を適用
-                                cellBg = mapping ? `${neonColor}11` : 'rgba(255, 255, 255, 0.04)';
-                              }
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 17px)', gap: '2px', flex: 1 }}>
+                              {Array.from({ length: 8 }).map((_, cellIdx) => {
+                                const vAddr = startVAddr + cellIdx;
+                                const info = getVAddrInfo(vAddr);
 
-                              return (
-                                <div
-                                  key={cellIdx}
-                                  title={`Phys Addr: 0x${toHex(physAddr, 3)}\nValue: ${val} (0x${toHex(val)})`}
-                                  style={{
-                                    width: '19px',
-                                    height: '14px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    borderRadius: '1.5px',
-                                    background: cellBg,
-                                    border: cellBorder,
-                                    color: cellColor,
-                                    fontWeight: 700, // 常に太字でハッキリ表示
-                                    boxShadow: cellShadow,
-                                    fontSize: '0.55rem',
-                                    fontFamily: 'var(--font-mono)',
-                                    transition: 'all 0.1s',
-                                  }}
-                                >
-                                  {toHex(val)}
-                                </div>
-                              );
-                            })}
+                                const isPcHighlight = cpu.pc === vAddr;
+                                const isAccessed = addressTranslationLog?.virtualAddr === vAddr;
+                                const isLastWrite = execState.lastWriteRamAddr !== null;
+
+                                let cellBg = 'rgba(10, 18, 36, 0.2)';
+                                let cellBorder = '1px solid rgba(255, 255, 255, 0.02)';
+                                let cellColor = info.valid ? pageColor : 'rgba(255, 255, 255, 0.1)';
+                                let cellShadow = 'none';
+
+                                if (isPcHighlight) {
+                                  cellBg = 'rgba(0, 255, 170, 0.2)';
+                                  cellBorder = '1px solid var(--color-success)';
+                                  cellColor = 'var(--color-success)';
+                                  cellShadow = '0 0 3px var(--color-success)';
+                                } else if (isAccessed) {
+                                  cellBg = isLastWrite ? 'rgba(255, 0, 127, 0.25)' : 'rgba(255, 170, 0, 0.25)';
+                                  cellBorder = isLastWrite ? '1px solid var(--color-secondary)' : '1px solid var(--color-warning)';
+                                  cellColor = isLastWrite ? 'var(--color-secondary)' : 'var(--color-warning)';
+                                  cellShadow = isLastWrite ? '0 0 3px var(--color-secondary)' : '0 0 3px var(--color-warning)';
+                                } else if (info.valid) {
+                                  cellBg = `${pageColor}0b`;
+                                }
+
+                                return (
+                                  <div
+                                    key={cellIdx}
+                                    title={info.valid
+                                      ? `VAddr: 0x${toHex(vAddr)}\nPAddr: 0x${toHex(info.physAddr || 0, 3)}\nValue: ${info.value}`
+                                      : `VAddr: 0x${toHex(vAddr)}\nUnmapped`
+                                    }
+                                    style={{
+                                      width: '17px',
+                                      height: '14px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      borderRadius: '1.5px',
+                                      background: cellBg,
+                                      border: cellBorder,
+                                      color: cellColor,
+                                      fontWeight: 700,
+                                      boxShadow: cellShadow,
+                                      fontSize: '0.52rem',
+                                      fontFamily: 'var(--font-mono)',
+                                      transition: 'all 0.1s',
+                                    }}
+                                  >
+                                    {info.valid && info.value !== null ? toHex(info.value) : '--'}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      </React.Fragment>
-                    );
-                  })}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>

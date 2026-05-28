@@ -7,12 +7,12 @@ export interface CPUState {
   registers: number[]; // R0, R1, R2, R3 (各8bit)
   pc: number;          // プログラムカウンタ (8bit)
   datr: number;        // DAT制御レジスタ (8bit、下位1bitが有効フラグ)
+  cr1: number;         // コントロールレジスタ1 (PASCE / ページテーブルの物理フレーム番号 0~7)
   zf: boolean;         // ゼロフラグ
   ef: boolean;         // エラーフラグ (DAT例外等)
   halted: boolean;     // 実行停止フラグ
   ram: Uint8Array;     // 内蔵RAM (512バイト)
   rom: Uint8Array;     // ROM (256バイト)
-  datTable: DATEntry[]; // DATテーブル (4エントリ)
 }
 
 export type OperandType =
@@ -25,7 +25,8 @@ export type OperandType =
   | 'ind_reg'
   | 'addr'
   | 'page_frame'
-  | 'page';
+  | 'page'
+  | 'cr_reg';
 
 export interface DecodedInstruction {
   opcode: number;

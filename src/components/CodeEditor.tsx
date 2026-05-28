@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AssembleError } from '../emulator/assembler';
 
 interface CodeEditorProps {
@@ -67,34 +67,108 @@ HALT
   },
   {
     id: 'context-switch',
-    name: '3. OS風コンテキストスイッチデモ',
-    code: `; OSによるコンテキストスイッチの簡易シミュレーション
-; プロセスA(フレーム3)とプロセスB(フレーム4)を切り替えます
+    name: '3. OS風マルチタスク・動的コード配置デモ',
+    code: `; === OSによるプログラム動的配置 ＆ 時分割スケジューラデモ ===
+; OSが物理RAM上の別フレームに、プロセスAとプロセスBのコードとデータを
+; 直接コピー（配置）し、CR1の切り替えだけで両プロセスを並走させます。
+; プロセスは両方とも「全く同じ仮想アドレス 0x00」で実行を開始します！
 
-; 1. 初期マッピング (ページ1 -> フレーム3)
-DATSET 1, 3
+; --- 1. プロセスAのコード動的配置 (物理フレーム3) ---
+; DAT無効時は 0xC0 (物理フレーム3の先頭) に直接ストアして配置できます。
+; プロセスAの内容: LOAD R1, 10; STORE [0x40], R1; DATDIS; BR taskA_done
+LOAD R0, 0x10     ; LOAD R1, imm の Opcode
+STORE [0xC0], R0
+LOAD R0, 1        ; レジスタ R1
+STORE [0xC1], R0
+LOAD R0, 10       ; 即値 10
+STORE [0xC2], R0
+LOAD R0, 0x20     ; STORE [addr], Rs の Opcode
+STORE [0xC3], R0
+LOAD R0, 1        ; レジスタ R1
+STORE [0xC4], R0
+LOAD R0, 0x40     ; 仮想アドレス 0x40
+STORE [0xC5], R0
+LOAD R0, 0x43     ; DATDIS (DAT無効化) の Opcode
+STORE [0xC6], R0
+LOAD R0, 0x30     ; BR (無条件分岐) の Opcode
+STORE [0xC7], R0
+LOAD R0, taskA_done ; 復帰先OSアドレス
+STORE [0xC8], R0
+
+; --- 2. プロセスBのコード動的配置 (物理フレーム4) ---
+; 物理フレーム4 (物理0x100~) はDAT無効時はアクセスできません。
+; そのため、ページ2 (仮想0x80) にフレーム4を一時マッピングして配置します。
+DATSET 2, 4
+DATEN             ; DAT一時有効化
+
+; プロセスBの内容: LOAD R1, [0x40]; ADD R1, 89; STORE [0x40], R1; DATDIS; BR taskB_done
+LOAD R0, 0x11     ; LOAD R1, [addr] の Opcode
+STORE [0x80], R0
+LOAD R0, 1        ; レジスタ R1
+STORE [0x81], R0
+LOAD R0, 0x40     ; 仮想アドレス 0x40
+STORE [0x82], R0
+LOAD R0, 0x02     ; ADD R1, imm の Opcode
+STORE [0x83], R0
+LOAD R0, 1        ; レジスタ R1
+STORE [0x84], R0
+LOAD R0, 89       ; 即値 89 (0 + 89)
+STORE [0x85], R0
+LOAD R0, 0x20     ; STORE [addr], Rs の Opcode
+STORE [0x86], R0
+LOAD R0, 1        ; レジスタ R1
+STORE [0x87], R0
+LOAD R0, 0x40     ; 仮想アドレス 0x40
+STORE [0x88], R0
+LOAD R0, 0x43     ; DATDIS の Opcode
+STORE [0x89], R0
+LOAD R0, 0x30     ; BR の Opcode
+STORE [0x8A], R0
+LOAD R0, taskB_done ; 復帰先OSアドレス
+STORE [0x8B], R0
+
+DATDIS            ; 一旦DATを無効化 (物理空間に戻る)
+
+; --- 3. ページテーブルの初期構築 (OSの仕事) ---
+; タスクAのテーブル (物理フレーム1)
+LOAD R0, 1
+LCTL CR1, R0
+DATSET 0, 3       ; 仮想0x00~ (コード) -> 物理フレーム3
+DATSET 1, 5       ; 仮想0x40~ (データ) -> 物理フレーム5
+
+; タスクBのテーブル (物理フレーム2)
+LOAD R0, 2
+LCTL CR1, R0
+DATSET 0, 4       ; 仮想0x00~ (コード) -> 物理フレーム4
+DATSET 1, 6       ; 仮想0x40~ (データ) -> 物理フレーム6
+
+; --- 4. スケジューラループ (マルチタスク実行開始) ---
+scheduler_loop:
+
+; [プロセスAを実行]
+LOAD R0, 1
+LCTL CR1, R0      ; プロセスAのアドレススペースを選択
+DATEN             ; DATを本稼働！
+BR 0x00           ; 仮想アドレス 0x00 へ分岐して実行！ (完了すると taskA_done に戻る)
+
+taskA_done:
+; プロセスAが書き込んだデータ (10) は、安全に物理フレーム5 (0x140) に保存されています。
+
+; [プロセスBを実行]
+LOAD R0, 2
+LCTL CR1, R0      ; プロセスBのアドレススペースを選択
+DATEN             ; DATを本稼働！
+BR 0x00           ; 仮想アドレス 0x00 へ分岐して実行！ (完了すると taskB_done に戻る)
+
+taskB_done:
+; プロセスBが計算したデータ (89) は、安全に物理フレーム6 (0x180) に保存されています。
+
+; [確認のため、再びプロセスAを実行]
+; 以前のデータ (10) がメモリに保存されているため、再実行でデータが上書きされます。
+LOAD R0, 1
+LCTL CR1, R0
 DATEN
-
-; --- プロセスAの実行 ---
-LOAD R0, 10   ; プロセスAの作業データ (R0 = 10)
-; コンテキスト退避 (プロセスAの仮想アドレス 0x40 にR0を退避)
-STORE [0x40], R0
-
-; --- コンテキストスイッチ(OSの役割) ---
-; ページ1(実行空間)のマッピングをフレーム4(プロセスBの実体)に切り替え！
-DATSET 1, 4
-
-; --- プロセスBの実行 ---
-; プロセスBの仮想アドレス 0x40 から以前の状態を復元
-LOAD R0, [0x40] ; 新しいフレーム4からデータがロードされる (初期は0)
-ADD R0, 50      ; プロセスBでの処理 (R0 = 50)
-; プロセスBの状態を保存
-STORE [0x40], R0
-
-; --- 再びコンテキストスイッチ ---
-; ページ1をフレーム3(プロセスAの実体)に復元
-DATSET 1, 3
-LOAD R0, [0x40] ; プロセスAのデータ(10)が復元される！
+BR 0x00
 
 HALT
 `,
@@ -151,6 +225,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [code, setCode] = useState(initialCode);
   const [errors, setErrors] = useState<AssembleError[]>([]);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = () => {
+    if (textareaRef.current && lineNumbersRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
 
   // プリセットの変更
   const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -229,6 +312,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden', background: '#03060d' }}>
         {/* 行番号表示 */}
         <div
+          ref={lineNumbersRef}
           style={{
             width: '40px',
             background: 'rgba(10, 18, 36, 0.5)',
@@ -240,12 +324,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             color: 'var(--color-text-muted)',
             fontFamily: 'var(--font-mono)',
             fontSize: '0.85rem',
-            lineHeight: '1.5',
             userSelect: 'none',
+            overflowY: 'hidden',
+            boxSizing: 'border-box',
           }}
         >
           {code.split('\n').map((_, index) => (
-            <div key={index} style={{ height: '22px' }}>
+            <div key={index} style={{ height: '22px', lineHeight: '22px' }}>
               {index + 1}
             </div>
           ))}
@@ -253,6 +338,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
         {/* テキスト編集エリア */}
         <textarea
+          ref={textareaRef}
+          onScroll={handleScroll}
           value={code}
           onChange={(e) => setCode(e.target.value)}
           disabled={isCpuRunning}
@@ -264,7 +351,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             color: 'var(--color-text-main)',
             fontFamily: 'var(--font-mono)',
             fontSize: '0.85rem',
-            lineHeight: '1.5',
+            lineHeight: '22px',
             padding: '12px',
             outline: 'none',
             resize: 'none',

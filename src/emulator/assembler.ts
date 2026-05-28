@@ -26,7 +26,7 @@ const parseNumber = (str: string): number => {
 const OperandRegex: Record<OperandType, RegExp> = {
   none: /^\s*$/,
   reg_reg: /^\s*R([0-3])\s*,\s*R([0-3])\s*$/i,
-  reg_imm: /^\s*R([0-3])\s*,\s*(0x[0-9A-F]+|-?[0-9]+)\s*$/i,
+  reg_imm: /^\s*R([0-3])\s*,\s*(0x[0-9A-F]+|-?[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
   reg_addr: /^\s*R([0-3])\s*,\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*$/i,
   addr_reg: /^\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*,\s*R([0-3])\s*$/i,
   reg_ind: /^\s*R([0-3])\s*,\s*\[\s*R([0-3])\s*\]\s*$/i,
@@ -34,6 +34,7 @@ const OperandRegex: Record<OperandType, RegExp> = {
   addr: /^\s*([a-zA-Z_][a-zA-Z0-9_]*|0x[0-9A-F]+|[0-9]+)\s*$/i, // ラベルまたは数値
   page_frame: /^\s*([0-3])\s*,\s*([0-7])\s*$/i,
   page: /^\s*([0-3])\s*$/i,
+  cr_reg: /^\s*CR1\s*,\s*R([0-3])\s*$/i,
 };
 
 // パースされた文字列引数をバイナリバイト列にエンコードする
@@ -57,8 +58,18 @@ const encodeOperands = (
 
     case 'reg_imm': {
       const rd = parseInt(matches[1], 10);
-      const imm = parseNumber(matches[2]) & 0xFF;
-      bytes.push(rd, imm);
+      const target = matches[2];
+      let imm = 0;
+      if (target.match(/^[a-zA-Z_][a-zA-Z0-9_]*$/)) {
+        if (labelMap[target] !== undefined) {
+          imm = labelMap[target];
+        } else {
+          return { bytes: [], err: `定義されていないラベルです: ${target}` };
+        }
+      } else {
+        imm = parseNumber(target);
+      }
+      bytes.push(rd, imm & 0xFF);
       return { bytes };
     }
 
@@ -118,6 +129,12 @@ const encodeOperands = (
     case 'page': {
       const page = parseInt(matches[1], 10);
       bytes.push(page & 0xFF);
+      return { bytes };
+    }
+
+    case 'cr_reg': {
+      const rs = parseInt(matches[1], 10);
+      bytes.push(rs & 0x0F);
       return { bytes };
     }
 

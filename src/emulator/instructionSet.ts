@@ -167,10 +167,11 @@ export const InstructionSet: Record<number, InstructionDef> = {
     operandType: 'page_frame',
     execute: (cpu, [page, frame]) => {
       if (page >= 0 && page < 4) {
-        cpu.datTable[page] = { valid: true, pfn: frame };
+        const tableAddr = (cpu.cr1 << 6) + page;
+        cpu.ram[tableAddr] = 0x80 | (frame & 0x07);
       }
     },
-    explain: ([page, frame]) => `DATテーブルの仮想ページ ${page} (アドレス 0x${(page * 64).toString(16).toUpperCase().padStart(2, '0')} ~) に、物理フレーム ${frame} (RAM 0x${(frame * 64).toString(16).toUpperCase().padStart(3, '0')} ~) を登録し、有効化します。`,
+    explain: ([page, frame]) => `現在 CR1 (PASCE) が指す物理RAM上のページテーブルに、仮想ページ ${page} から物理フレーム ${frame} へのマッピングを登録し、有効化します。`,
   },
   0x41: {
     opcode: 0x41,
@@ -179,10 +180,11 @@ export const InstructionSet: Record<number, InstructionDef> = {
     operandType: 'page',
     execute: (cpu, [page]) => {
       if (page >= 0 && page < 4) {
-        cpu.datTable[page] = { valid: false, pfn: 0 };
+        const tableAddr = (cpu.cr1 << 6) + page;
+        cpu.ram[tableAddr] = 0x00;
       }
     },
-    explain: ([page]) => `DATテーブルの仮想ページ ${page} のマッピングを解除（無効化）します。`,
+    explain: ([page]) => `現在 CR1 (PASCE) が指す物理RAM上のページテーブルの仮想ページ ${page} のマッピングを解除（無効化）します。`,
   },
   0x42: {
     opcode: 0x42,
@@ -192,7 +194,7 @@ export const InstructionSet: Record<number, InstructionDef> = {
     execute: (cpu) => {
       cpu.datr = 1;
     },
-    explain: () => `DAT（動的アドレス変換）機能を有効にします。これ以降、アドレスアクセスはDATテーブルを介してマッピングされます。`,
+    explain: () => `DAT（動的アドレス変換）機能を有効にします。これ以降、アドレスアクセスはCR1が指す物理RAM上のページテーブルを介してマッピングされます。`,
   },
   0x43: {
     opcode: 0x43,
@@ -203,6 +205,16 @@ export const InstructionSet: Record<number, InstructionDef> = {
       cpu.datr = 0;
     },
     explain: () => `DAT（動的アドレス変換）機能を無効にします。アドレスアクセスは物理RAMの先頭（0x00 ~ 0xFF）に直接マッピングされます。`,
+  },
+  0x44: {
+    opcode: 0x44,
+    mnemonic: 'LCTL',
+    bytes: 2,
+    operandType: 'cr_reg',
+    execute: (cpu, [rs]) => {
+      cpu.cr1 = cpu.registers[rs] & 0x07;
+    },
+    explain: ([rs]) => `コントロールレジスタ CR1 (PASCE) に、レジスタ R${rs} の値（物理ページテーブルのフレーム番号 0〜7）をロードします（OS特権命令）。`,
   },
 
   // --- SYSTEM (システム) ---
