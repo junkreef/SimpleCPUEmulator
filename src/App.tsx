@@ -17,7 +17,7 @@ function App() {
   const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set());
   const [addressToLineMap, setAddressToLineMap] = useState<Record<number, number>>({});
 
-  const skipNextBreakpointRef = useRef(false);
+  const isFirstStepAfterResumeRef = useRef(false);
 
   // アセンブル完了時のハンドラー
   const handleAssemble = (code: string) => {
@@ -40,6 +40,8 @@ function App() {
         return next;
       });
 
+      isFirstStepAfterResumeRef.current = false;
+
       return { success: true, errors: [] };
     } else {
       setHasProgram(false);
@@ -61,6 +63,7 @@ function App() {
   // リセット
   const handleReset = () => {
     setIsAutoRunning(false);
+    isFirstStepAfterResumeRef.current = false;
     if (currentCode) {
       handleAssemble(currentCode);
     } else {
@@ -92,6 +95,30 @@ function App() {
       return;
     }
 
+    // --- ブレークポイント判定 (setExecState の外で、最新の execState を使ってアトミックに判定！) ---
+    if (execState.phase === 'FETCH') {
+      const trans = translateAddress(execState.cpu, execState.cpu.pc);
+      if (trans.success && trans.physicalAddr !== null) {
+        const physAddr = trans.physicalAddr;
+        const line = addressToLineMap[physAddr];
+
+        if (line !== undefined && breakpoints.has(line)) {
+          if (isFirstStepAfterResumeRef.current) {
+            // 再開・Resume直後の1歩目なのでスルーし、フラグを倒す
+            isFirstStepAfterResumeRef.current = false;
+          } else {
+            // 新たにブレークポイントに達したので、自動実行を一時停止（タイマーはセットしない）
+            setIsAutoRunning(false);
+            return;
+          }
+        }
+      }
+    }
+
+    // 実行を進めるので、再開時スキップフラグをリセット
+    isFirstStepAfterResumeRef.current = false;
+
+    // 通常通りタイマーをセット
     const interval = 1000 / speedHz;
     const timer = setTimeout(() => {
       setExecState((prev) => {
@@ -99,36 +126,12 @@ function App() {
           setIsAutoRunning(false);
           return prev;
         }
-
-        // --- ブレークポイント判定 ---
-        // FETCHフェーズの開始時で、PCアドレスに対応する物理アドレスのアセンブリ行番号が breakpoints に含まれる場合
-        if (prev.phase === 'FETCH') {
-          const trans = translateAddress(prev.cpu, prev.cpu.pc);
-          if (trans.success && trans.physicalAddr !== null) {
-            const physAddr = trans.physicalAddr;
-            const line = addressToLineMap[physAddr];
-
-            if (line !== undefined && breakpoints.has(line)) {
-              if (skipNextBreakpointRef.current) {
-                // 一時停止からの再開(Resume)直後の場合は、現在のブレークポイントを1回だけスルーして進む
-                skipNextBreakpointRef.current = false;
-              } else {
-                // 自動実行を一時停止し、状態は更新せずそのまま戻る
-                setIsAutoRunning(false);
-                return prev;
-              }
-            }
-          }
-        }
-
-        // 実行を進めるので、スキップフラグをリセット
-        skipNextBreakpointRef.current = false;
         return stepInstruction(prev); // 1命令実行
       });
     }, interval);
 
     return () => clearTimeout(timer);
-  }, [isAutoRunning, speedHz, execState.cpu.pc, execState.cpu.halted, execState.cpu.ef, breakpoints, addressToLineMap]);
+  }, [isAutoRunning, speedHz, execState.cpu.pc, execState.phase, execState.cpu.halted, execState.cpu.ef, breakpoints, addressToLineMap]);
 
   // 現在実行中の命令が対応するアセンブリ行を特定
   const getCurrentLine = () => {
@@ -250,7 +253,7 @@ function App() {
                 onReset={handleReset}
                 onToggleAuto={() => {
                   if (!isAutoRunning) {
-                    skipNextBreakpointRef.current = true;
+                    isFirstStepAfterResumeRef.current = true;
                   }
                   setIsAutoRunning(!isAutoRunning);
                 }}
