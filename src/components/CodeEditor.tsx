@@ -78,7 +78,7 @@ HALT
 
 ; --- 1. プロセスAのコード動的配置 (物理フレーム3) ---
 ; DAT無効時は 0xC0 (物理フレーム3の先頭) に直接ストアして配置できます。
-; プロセスAの内容: LOAD R1, 10; STORE [0x40], R1; DATDIS; BR taskA_done
+; プロセスAの内容: LOAD R1, 10; STORE [0x40], R1; BR taskA_done
 LOAD R0, 0x10     ; LOAD R1, imm の Opcode
 STORE [0xC0], R0
 LOAD R0, 1        ; レジスタ R1
@@ -91,20 +91,20 @@ LOAD R0, 1        ; レジスタ R1
 STORE [0xC4], R0
 LOAD R0, 0x40     ; 仮想アドレス 0x40
 STORE [0xC5], R0
-LOAD R0, 0x43     ; DATDIS (DAT無効化) の Opcode
+LOAD R0, 0x30     ; BR (無条件分岐) の Opcode (DATDISは行わず、直接OSへ戻る)
 STORE [0xC6], R0
-LOAD R0, 0x30     ; BR (無条件分岐) の Opcode
-STORE [0xC7], R0
 LOAD R0, taskA_done ; 復帰先OSアドレス
-STORE [0xC8], R0
+STORE [0xC7], R0
 
 ; --- 2. プロセスBのコード動的配置 (物理フレーム4) ---
 ; 物理フレーム4 (物理0x100~) はDAT無効時はアクセスできません。
 ; そのため、ページ2 (仮想0x80) にフレーム4を一時マッピングして配置します。
-DATSET 2, 4
+DATSET 0, 0       ; ★アイデンティティマッピング (Page 0 -> Frame 0)
+DATSET 1, 1       ; ★アイデンティティマッピング (Page 1 -> Frame 1)
+DATSET 2, 4       ; ページ2(0x80~0xBF) -> 物理フレーム4(0x100~0x13F)
 DATEN             ; DAT一時有効化
 
-; プロセスBの内容: LOAD R1, [0x40]; ADD R1, 89; STORE [0x40], R1; DATDIS; BR taskB_done
+; プロセスBの内容: LOAD R1, [0x40]; ADD R1, 89; STORE [0x40], R1; BR taskB_done
 LOAD R0, 0x11     ; LOAD R1, [addr] の Opcode
 STORE [0x80], R0
 LOAD R0, 1        ; レジスタ R1
