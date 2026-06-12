@@ -24,13 +24,58 @@ const parseNumber = (str: string): number => {
   return parseInt(str, 10);
 };
 
+// ラベル名（識別子）かどうかの判定
+const isIdentifier = (str: string): boolean => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(str);
+
+// アドレス系オペランド（数値リテラル または ラベル/変数名）を解決する
+const resolveAddr = (
+  target: string,
+  labelMap: Record<string, number>
+): { value: number; err?: string } => {
+  if (isIdentifier(target)) {
+    if (labelMap[target] !== undefined) {
+      return { value: labelMap[target] & 0xFF };
+    }
+    return { value: 0, err: `定義されていないラベル/変数です: ${target}` };
+  }
+  return { value: parseNumber(target) & 0xFF };
+};
+
+// DS擬似命令で確保するストレージのサイズ（バイト数）を解析する。
+// 書式: [反復数]型[L長さ]  例) X / XL16 / 8X / 3CL2
+const parseDSOperand = (operandStr: string): { bytes: number; err?: string } => {
+  const m = operandStr.match(/^(\d+)?([a-zA-Z])(?:L(\d+))?$/);
+  if (!m) {
+    return {
+      bytes: 0,
+      err: `DSのオペランド書式が不正です: "${operandStr}"（例: X, XL16, 8X, 3CL2）`,
+    };
+  }
+  const dup = m[1] !== undefined ? parseInt(m[1], 10) : 1;
+  const type = m[2].toUpperCase();
+  // 本CPUは8ビット（バイト）マシンのため、サポートする型は X / C（いずれも要素長1バイト）。
+  const impliedLength: Record<string, number> = { X: 1, C: 1 };
+  if (impliedLength[type] === undefined) {
+    return {
+      bytes: 0,
+      err: `DSでサポートされていない型です: "${type}"（使用可能: X, C）`,
+    };
+  }
+  const length = m[3] !== undefined ? parseInt(m[3], 10) : impliedLength[type];
+  const total = dup * length;
+  if (total <= 0) {
+    return { bytes: 0, err: `DSで確保するサイズが0以下です: "${operandStr}"` };
+  }
+  return { bytes: total };
+};
+
 // オペランドパース用の正規表現マッピング
 const OperandRegex: Record<OperandType, RegExp> = {
   none: /^\s*$/,
   reg_reg: /^\s*R([0-7])\s*,\s*R([0-7])\s*$/i,
   reg_imm: /^\s*R([0-7])\s*,\s*(0x[0-9A-F]+|-?[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*)\s*$/i,
-  reg_addr: /^\s*R([0-7])\s*,\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*$/i,
-  addr_reg: /^\s*\[\s*(0x[0-9A-F]+|[0-9]+)\s*\]\s*,\s*R([0-7])\s*$/i,
+  reg_addr: /^\s*R([0-7])\s*,\s*\[\s*(0x[0-9A-F]+|[0-9]+|(?!R[0-7]\s*\])[a-zA-Z_][a-zA-Z0-9_]*)\s*\]\s*$/i,
+  addr_reg: /^\s*\[\s*(0x[0-9A-F]+|[0-9]+|(?!R[0-7]\s*\])[a-zA-Z_][a-zA-Z0-9_]*)\s*\]\s*,\s*R([0-7])\s*$/i,
   reg_ind: /^\s*R([0-7])\s*,\s*\[\s*R([0-7])\s*\]\s*$/i,
   ind_reg: /^\s*\[\s*R([0-7])\s*\]\s*,\s*R([0-7])\s*$/i,
   addr: /^\s*([a-zA-Z_][a-zA-Z0-9_]*|0x[0-9A-F]+|[0-9]+)\s*$/i, // ラベルまたは数値
@@ -78,15 +123,17 @@ const encodeOperands = (
 
     case 'reg_addr': {
       const rd = parseInt(matches[1], 10);
-      const addr = parseNumber(matches[2]) & 0xFF;
-      bytes.push(rd, addr);
+      const resolved = resolveAddr(matches[2], labelMap);
+      if (resolved.err) return { bytes: [], err: resolved.err };
+      bytes.push(rd, resolved.value);
       return { bytes };
     }
 
     case 'addr_reg': {
-      const addr = parseNumber(matches[1]) & 0xFF;
+      const resolved = resolveAddr(matches[1], labelMap);
+      if (resolved.err) return { bytes: [], err: resolved.err };
       const rs = parseInt(matches[2], 10);
-      bytes.push(rs, addr); // Opcode後続バイト: [Rs][Addr]
+      bytes.push(rs, resolved.value); // Opcode後続バイト: [Rs][Addr]
       return { bytes };
     }
 
@@ -229,6 +276,17 @@ export const assemble = (sourceCode: string): AssembleResult => {
     }
 
     if (pl.mnemonic) {
+      // DS擬似命令: ストレージ領域を確保する（実命令ではない）
+      if (pl.mnemonic === 'DS') {
+        const ds = parseDSOperand(pl.operandStr ?? '');
+        if (ds.err) {
+          errors.push({ line: pl.lineNumber, text: pl.originalText, message: ds.err });
+          continue;
+        }
+        currentAddress += ds.bytes;
+        continue;
+      }
+
       const defs = MnemonicMap[pl.mnemonic];
       if (!defs || defs.length === 0) {
         errors.push({
@@ -285,6 +343,28 @@ export const assemble = (sourceCode: string): AssembleResult => {
   let writePtr = 0;
   for (const pl of parsedLines) {
     if (!pl.mnemonic) continue;
+
+    // DS擬似命令: 確保分だけ書き込み位置を進める（ROMはゼロ初期化のまま＝ストレージ予約）
+    if (pl.mnemonic === 'DS') {
+      const ds = parseDSOperand(pl.operandStr ?? '');
+      if (ds.err) {
+        errors.push({ line: pl.lineNumber, text: pl.originalText, message: ds.err });
+        continue;
+      }
+      if (writePtr + ds.bytes > 256) {
+        errors.push({
+          line: pl.lineNumber,
+          text: pl.originalText,
+          message: `ROMの最大容量（256バイト）を超過しました（現在: ${writePtr + ds.bytes}バイト）。`,
+        });
+        break;
+      }
+      // データ領域の先頭アドレスと行を対応づけておく
+      addressToLineMap[writePtr] = pl.lineNumber;
+      lineToAddressMap[pl.lineNumber] = writePtr;
+      writePtr += ds.bytes;
+      continue;
+    }
 
     const defs = MnemonicMap[pl.mnemonic];
     let matchedDef: InstructionDef | null = null;
