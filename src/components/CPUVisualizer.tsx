@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { CPUExecutionState } from '../emulator/types';
 import { translateAddress } from '../emulator/cpu';
 
@@ -29,6 +29,20 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
   const toHex = (val: number, len: number = 2) => {
     return val.toString(16).toUpperCase().padStart(len, '0');
   };
+
+  // 初心者向け: 16進数値にマウスオーバーすると2進数・10進数を表示するオーバーレイ
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; flip: boolean; label: string; value: number } | null>(null);
+
+  // マウス位置を追ってツールチップ情報を更新するハンドラを生成する
+  const showTip = (label: string, value: number) => (e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setTip({ x, y, flip: x > rect.width * 0.6, label, value });
+  };
+  const hideTip = () => setTip(null);
 
   // 各フェーズごとのアクティブフラグ
   const isFetch = phase === 'FETCH';
@@ -117,7 +131,7 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
         CPU & RAM INTEGRATED DATAPATH VISUALIZER
       </h3>
 
-      <div style={{ flex: 1, position: 'relative', background: '#02050b', borderRadius: '8px', border: '1px solid rgba(0, 210, 255, 0.05)', overflow: 'hidden' }}>
+      <div ref={containerRef} style={{ flex: 1, position: 'relative', background: '#02050b', borderRadius: '8px', border: '1px solid rgba(0, 210, 255, 0.05)', overflow: 'hidden' }}>
         <svg
           viewBox="0 0 1060 440"
           width="100%"
@@ -330,21 +344,21 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
             <text x="43" y="10" textAnchor="middle" fill="var(--color-text-muted)" fontSize="7.5" fontWeight="700">IR (3-BYTE)</text>
 
             {/* Byte 0 */}
-            <g transform="translate(5, 14)">
+            <g transform="translate(5, 14)" style={fetchBuffer.length > 0 ? { cursor: 'help' } : undefined} onMouseMove={fetchBuffer.length > 0 ? showTip('IR バイト0', fetchBuffer[0]) : undefined} onMouseLeave={hideTip}>
               <rect x="0" y="0" width="22" height="15" rx="2" fill="rgba(10, 18, 36, 0.6)" stroke="rgba(255,255,255,0.08)" strokeWidth="0.8" />
               <text x="11" y="11" textAnchor="middle" fill={fetchBuffer.length > 0 ? 'var(--color-secondary)' : 'var(--color-text-muted)'} className="digital-display" fontSize="8" fontWeight="700">
                 {fetchBuffer.length > 0 ? toHex(fetchBuffer[0]) : '--'}
               </text>
             </g>
             {/* Byte 1 */}
-            <g transform="translate(32, 14)">
+            <g transform="translate(32, 14)" style={fetchBuffer.length > 1 ? { cursor: 'help' } : undefined} onMouseMove={fetchBuffer.length > 1 ? showTip('IR バイト1', fetchBuffer[1]) : undefined} onMouseLeave={hideTip}>
               <rect x="0" y="0" width="22" height="15" rx="2" fill="rgba(10, 18, 36, 0.6)" stroke="rgba(255,255,255,0.08)" strokeWidth="0.8" />
               <text x="11" y="11" textAnchor="middle" fill={fetchBuffer.length > 1 ? 'var(--color-secondary)' : 'var(--color-text-muted)'} className="digital-display" fontSize="8" fontWeight="700">
                 {fetchBuffer.length > 1 ? toHex(fetchBuffer[1]) : '--'}
               </text>
             </g>
             {/* Byte 2 */}
-            <g transform="translate(59, 14)">
+            <g transform="translate(59, 14)" style={fetchBuffer.length > 2 ? { cursor: 'help' } : undefined} onMouseMove={fetchBuffer.length > 2 ? showTip('IR バイト2', fetchBuffer[2]) : undefined} onMouseLeave={hideTip}>
               <rect x="0" y="0" width="22" height="15" rx="2" fill="rgba(10, 18, 36, 0.6)" stroke="rgba(255,255,255,0.08)" strokeWidth="0.8" />
               <text x="11" y="11" textAnchor="middle" fill={fetchBuffer.length > 2 ? 'var(--color-secondary)' : 'var(--color-text-muted)'} className="digital-display" fontSize="8" fontWeight="700">
                 {fetchBuffer.length > 2 ? toHex(fetchBuffer[2]) : '--'}
@@ -368,7 +382,7 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
               const regName = `R${idx}`;
               const isActive = decoded && decoded.operandText.includes(regName);
               return (
-                <g key={idx} transform={`translate(0, ${idx * 21})`}>
+                <g key={idx} transform={`translate(0, ${idx * 21})`} style={{ cursor: 'help' }} onMouseMove={showTip(`レジスタ r${idx}`, regVal)} onMouseLeave={hideTip}>
                   <rect x="0" y="0" width="50" height="18" rx="3" fill={isActive ? 'rgba(0, 210, 255, 0.15)' : 'rgba(10, 18, 36, 0.5)'} stroke={isActive ? 'var(--color-primary)' : 'rgba(255,255,255,0.08)'} strokeWidth="1" />
                   <text x="6" y="12" fill="var(--color-text-muted)" fontSize="7.5" fontWeight="700">r{idx}</text>
                   <text x="35" y="13" textAnchor="middle" fill="white" className="digital-display" fontSize="9.5" fontWeight="700">{regVal}</text>
@@ -404,7 +418,7 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
           </g>
 
           {/* (6) PC (Program Counter) */}
-          <g transform="translate(130, 310)">
+          <g transform="translate(130, 310)" style={{ cursor: 'help' }} onMouseMove={showTip('PC (プログラムカウンタ)', cpu.pc)} onMouseLeave={hideTip}>
             <rect x="0" y="0" width="70" height="30" rx="4" fill="url(#blueGrad)" stroke={isFetch ? 'var(--color-primary)' : 'var(--border-color)'} strokeWidth="1.5" filter={isFetch ? 'url(#glowCyan)' : 'none'} />
             <text x="35" y="11" textAnchor="middle" fill="var(--color-text-muted)" fontSize="8" fontWeight="700">PC</text>
             <text x="35" y="24" textAnchor="middle" fill="var(--color-primary)" className="digital-display" fontSize="11" fontWeight="700">
@@ -634,6 +648,8 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
                                   <div
                                     key={cellIdx}
                                     title={`Phys Addr: 0x${toHex(physAddr, 3)}\nValue: ${val} (0x${toHex(val)})`}
+                                    onMouseMove={showTip(`物理RAM 0x${toHex(physAddr, 3)}`, val)}
+                                    onMouseLeave={hideTip}
                                     style={{
                                       width: '19px',
                                       height: '14px',
@@ -778,6 +794,8 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
                                       ? `VAddr: 0x${toHex(vAddr)}\nPAddr: 0x${toHex(info.physAddr || 0, 3)}\nValue: ${info.value}`
                                       : `VAddr: 0x${toHex(vAddr)}\nUnmapped`
                                     }
+                                    onMouseMove={info.valid && info.value !== null ? showTip(`仮想 0x${toHex(vAddr)} → 物理 0x${toHex(info.physAddr || 0, 3)}`, info.value) : undefined}
+                                    onMouseLeave={hideTip}
                                     style={{
                                       width: '17px',
                                       height: '14px',
@@ -810,6 +828,45 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
             </div>
           </foreignObject>
         </svg>
+
+        {/* 進数変換オーバーレイ (16進数値にマウスオーバーで2進・10進を表示) */}
+        {tip && (() => {
+          const v = tip.value & 0xff;
+          const bin = v.toString(2).padStart(8, '0');
+          const binGrouped = `${bin.slice(0, 4)} ${bin.slice(4)}`;
+          const signed = v >= 128 ? v - 256 : v;
+          const rowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: '12px', lineHeight: 1.5 };
+          const tagStyle: React.CSSProperties = { color: 'var(--color-text-muted)', fontWeight: 700 };
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                left: tip.flip ? undefined : tip.x + 14,
+                right: tip.flip ? `calc(100% - ${tip.x - 14}px)` : undefined,
+                top: tip.y + 14,
+                zIndex: 50,
+                pointerEvents: 'none',
+                background: 'rgba(5, 11, 20, 0.96)',
+                border: '1px solid var(--color-primary)',
+                borderRadius: '6px',
+                padding: '8px 10px',
+                boxShadow: '0 0 12px rgba(0, 210, 255, 0.35)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.7rem',
+                color: 'var(--color-text-main)',
+                whiteSpace: 'nowrap',
+                minWidth: '150px',
+              }}
+            >
+              <div style={{ color: 'var(--color-primary)', fontWeight: 800, marginBottom: '4px', borderBottom: '1px solid rgba(0, 210, 255, 0.2)', paddingBottom: '3px' }}>
+                {tip.label}
+              </div>
+              <div style={rowStyle}><span style={tagStyle}>16進</span><span style={{ color: 'var(--color-warning)' }}>0x{toHex(v)}</span></div>
+              <div style={rowStyle}><span style={tagStyle}>10進</span><span style={{ color: 'var(--color-success)' }}>{v}<span style={{ color: 'var(--color-text-muted)' }}> (符号付 {signed})</span></span></div>
+              <div style={rowStyle}><span style={tagStyle}>2進</span><span style={{ color: 'var(--color-secondary)', letterSpacing: '1px' }}>{binGrouped}</span></div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* アニメーションステータス表示 (フッター) */}
