@@ -33,6 +33,8 @@ export const initCPUExecutionState = (romData?: Uint8Array): CPUExecutionState =
     phase: 'FETCH',
     decoded: null,
     fetchBuffer: [],
+    fetchedPhysAddrs: null,
+    fetchedVirtAddrs: null,
     lastAccessedRamAddr: null,
     lastAccessedRomAddr: null,
     lastWriteRamAddr: null,
@@ -284,6 +286,8 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
       // 命令に必要なバイト数分、各バイトごとにDAT変換を適用してフェッチ
       const bytesToFetch = instDef.bytes;
       const fetchBuffer: number[] = [];
+      const fetchedPhysAddrs: number[] = [];
+      const fetchedVirtAddrs: number[] = [];
       for (let i = 0; i < bytesToFetch; i++) {
         const vAddr = (pc + i) & 0xFF;
         const t = translateAddress(nextState.cpu, vAddr);
@@ -294,9 +298,17 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
           return nextState;
         }
         fetchBuffer.push(nextState.cpu.ram[t.physicalAddr]);
+        fetchedPhysAddrs.push(t.physicalAddr);
+        fetchedVirtAddrs.push(vAddr);
       }
 
+      // フェッチ完了時点でPCを次の命令の先頭へ進める (現実のCPUに準拠)
+      // 分岐命令はEXECUTEフェーズでPCを絶対アドレスに上書きする
+      nextState.cpu.pc = (pc + bytesToFetch) & 0xFF;
+
       nextState.fetchBuffer = fetchBuffer;
+      nextState.fetchedPhysAddrs = fetchedPhysAddrs;
+      nextState.fetchedVirtAddrs = fetchedVirtAddrs;
       nextState.decoded = null;
       nextState.phase = 'DECODE';
       break;
@@ -369,16 +381,11 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
         }
       };
 
-      // 実行前のPCを保存し、分岐命令で書き換わったか検出できるようにする
-      const pcBeforeExec = nextState.cpu.pc;
+      // 実行前のPCはFETCHフェーズで既に次の命令の先頭へ進んでいる。
+      // 分岐命令はexecute内でPCを絶対アドレスに上書きする。
 
       // 命令の実行
       instDef.execute(nextState.cpu, decoded.operands, { readMem, writeMem });
-
-      // PCの更新 (実行中にPCが直接書き換わっていなければ自動インクリメント)
-      if (nextState.cpu.pc === pcBeforeExec && !nextState.cpu.halted) {
-        nextState.cpu.pc = (pcBeforeExec + decoded.bytes) & 0xFF;
-      }
 
       // 実行後のステータスチェック
       if (nextState.cpu.ef) {
@@ -389,6 +396,8 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
         nextState.phase = 'FETCH';
         nextState.decoded = null;
         nextState.fetchBuffer = [];
+        nextState.fetchedPhysAddrs = null;
+        nextState.fetchedVirtAddrs = null;
       }
       break;
     }

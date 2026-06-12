@@ -23,6 +23,8 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
     lastAccessedRamAddr,
     lastWriteRamAddr,
     fetchBuffer,
+    fetchedPhysAddrs,
+    fetchedVirtAddrs,
   } = execState;
 
   // 16進数フォーマットヘルパー
@@ -122,8 +124,9 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
     }
   };
 
-  // 現在デコードまたはフェッチ中の命令のバイト数
-  const currentInstBytes = decoded ? decoded.bytes : (fetchBuffer.length > 0 ? fetchBuffer.length : 1);
+  // 現在フェッチ中（IRに取り込み済み）の命令を構成するバイトのアドレス集合
+  const instrPhysSet = fetchedPhysAddrs;
+  const instrVirtSet = fetchedVirtAddrs;
 
   return (
     <div className="cyber-panel" style={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -615,7 +618,8 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
 
                                 const isWrite = lastWriteRamAddr === physAddr;
                                 const isAccess = lastAccessedRamAddr === physAddr;
-                                const isPcHighlight = pcPhys !== null && (physAddr >= pcPhys && physAddr < pcPhys + currentInstBytes);
+                                const isInstrRead = instrPhysSet !== null && instrPhysSet.includes(physAddr);
+                                const isPcHighlight = pcPhys !== null && physAddr === pcPhys;
 
                                 let cellBg = 'rgba(10, 18, 36, 0.2)';
                                 let cellBorder = '1px solid rgba(255, 255, 255, 0.02)';
@@ -627,7 +631,7 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
                                   cellBorder = '1px solid var(--color-secondary)';
                                   cellColor = 'var(--color-secondary)';
                                   cellShadow = '0 0 3px var(--color-secondary)';
-                                } else if (isAccess) {
+                                } else if (isAccess || isInstrRead) {
                                   cellBg = 'rgba(255, 170, 0, 0.25)';
                                   cellBorder = '1px solid var(--color-warning)';
                                   cellColor = 'var(--color-warning)';
@@ -766,6 +770,7 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
 
                                 const isPcHighlight = cpu.pc === vAddr;
                                 const isAccessed = addressTranslationLog?.virtualAddr === vAddr;
+                                const isInstrRead = instrVirtSet !== null && instrVirtSet.includes(vAddr);
                                 const isLastWrite = execState.lastWriteRamAddr !== null;
 
                                 let cellBg = 'rgba(10, 18, 36, 0.2)';
@@ -778,7 +783,7 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
                                   cellBorder = '1px solid var(--color-success)';
                                   cellColor = 'var(--color-success)';
                                   cellShadow = '0 0 3px var(--color-success)';
-                                } else if (isAccessed) {
+                                } else if (isAccessed || isInstrRead) {
                                   cellBg = isLastWrite ? 'rgba(255, 0, 127, 0.25)' : 'rgba(255, 170, 0, 0.25)';
                                   cellBorder = isLastWrite ? '1px solid var(--color-secondary)' : '1px solid var(--color-warning)';
                                   cellColor = isLastWrite ? 'var(--color-secondary)' : 'var(--color-warning)';

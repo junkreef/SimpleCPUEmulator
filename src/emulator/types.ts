@@ -62,6 +62,9 @@ export interface CPUExecutionState {
   decoded: DecodedInstruction | null;
   // デコーダで次に読み込むバイト数など、可変長デコードの中間状態
   fetchBuffer: number[];
+  // 現在フェッチ中（IRに取り込まれている）命令を構成する各バイトのアドレス
+  fetchedPhysAddrs: number[] | null; // 物理アドレス
+  fetchedVirtAddrs: number[] | null; // 仮想アドレス
   lastAccessedRamAddr: number | null;
   lastAccessedRomAddr: number | null;
   lastWriteRamAddr: number | null;
