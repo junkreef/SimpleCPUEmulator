@@ -216,11 +216,17 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const lineNumbersInnerRef = useRef<HTMLDivElement>(null);
 
-  const handleScroll = () => {
-    if (textareaRef.current && lineNumbersRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+  // 行番号を textarea のスクロール位置に追従させる。
+  //
+  // 行番号側の scrollTop に代入する方式だと、textarea 側にだけ水平スクロールバーが
+  // 出る（whiteSpace: pre のため長い行で発生する）分だけ双方のスクロール可能量が
+  // 食い違い、最下部で代入値がクランプされてズレる。
+  // クランプされない transform で位置を合わせることで常に一致させる。
+  const syncScroll = () => {
+    if (textareaRef.current && lineNumbersInnerRef.current) {
+      lineNumbersInnerRef.current.style.transform = `translateY(${-textareaRef.current.scrollTop}px)`;
     }
   };
 
@@ -250,6 +256,12 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   useEffect(() => {
     handleAssemble();
   }, []);
+
+  // プリセット切り替えなどでコードが差し替わるとブラウザが scrollTop を
+  // 詰めることがあり、その際 scroll イベントが飛ばない場合があるため明示的に同期する
+  useEffect(() => {
+    syncScroll();
+  }, [code]);
 
   return (
     <div className="cyber-panel" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -301,23 +313,23 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden', background: '#03060d' }}>
         {/* 行番号表示 */}
         <div
-          ref={lineNumbersRef}
           style={{
             width: '48px', // ブレークポイントインジケータ表示のために少し幅を広げる（40px -> 48px）
+            flexShrink: 0,
             background: 'rgba(10, 18, 36, 0.5)',
             borderRight: '1px solid var(--border-color)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'stretch',
-            padding: '12px 0', // パディング左右を0にして、行要素側でパディングを管理する
             color: 'var(--color-text-muted)',
             fontFamily: 'var(--font-mono)',
             fontSize: '0.85rem',
             userSelect: 'none',
-            overflowY: 'hidden',
+            overflow: 'hidden',
             boxSizing: 'border-box',
           }}
         >
+          {/* transform で動かす内側のラッパー。textarea の padding-top は
+              スクロール領域に含まれるため、こちら側も同じ 12px を内側に持たせて
+              一緒に動かす（外側に置くと最初のスクロールで12pxずれる） */}
+          <div ref={lineNumbersInnerRef} style={{ paddingTop: '12px', willChange: 'transform' }}>
           {code.split('\n').map((_, index) => {
             const lineNum = index + 1;
             const hasBreakpoint = breakpoints.has(lineNum);
@@ -358,12 +370,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               </div>
             );
           })}
+          </div>
         </div>
 
         {/* テキスト編集エリア */}
         <textarea
           ref={textareaRef}
-          onScroll={handleScroll}
+          onScroll={syncScroll}
           value={code}
           onChange={(e) => setCode(e.target.value)}
           disabled={isCpuRunning}
