@@ -161,11 +161,24 @@ function App() {
   }, [isAutoRunning, speedHz, execState.cpu.pc, execState.phase, execState.cpu.halted, execState.cpu.ef, breakpoints, addressToLineMap]);
 
   // 現在実行中の命令が対応するアセンブリ行を特定
+  //
+  // PC は FETCH の完了時点で「次の命令」へ進み、分岐命令では EXECUTE で
+  // 飛び先に上書きされる。そのため PC をそのまま使うと、1つの命令を処理する
+  // 3フェーズの途中で強調行が動いてしまう（特に分岐で「1行下→上へ戻る」挙動になる）。
+  // FETCH 済みの命令については、その命令の先頭アドレスを使って行を固定する。
   const getCurrentLine = () => {
     if (execState.cpu.halted || execState.cpu.ef) return null;
+
+    // DECODE / EXECUTE 中: いま処理している命令の先頭アドレス（FETCH時に記録済み）
+    const fetchedHead = execState.fetchedPhysAddrs?.[0];
+    if (execState.phase !== 'FETCH' && fetchedHead !== undefined) {
+      return addressToLineMap[fetchedHead] ?? null;
+    }
+
+    // FETCH 中: これから取りに行く命令 = PC の指す先
     const trans = translateAddress(execState.cpu, execState.cpu.pc);
     if (trans.success && trans.physicalAddr !== null) {
-      return addressToLineMap[trans.physicalAddr] || null;
+      return addressToLineMap[trans.physicalAddr] ?? null;
     }
     return null;
   };
