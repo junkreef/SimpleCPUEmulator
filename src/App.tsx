@@ -213,7 +213,7 @@ function App() {
               boxShadow: '0 0 10px rgba(0, 210, 255, 0.5)',
             }}
           >
-            <span style={{ fontWeight: 900, color: 'var(--bg-main)', fontSize: '0.85rem', fontFamily: 'var(--font-digital)' }}>CPU</span>
+            <span style={{ fontWeight: 900, color: 'var(--bg-main)', fontSize: '0.62rem', fontFamily: 'var(--font-digital)', lineHeight: 1 }}>CPU</span>
           </div>
           <h1
             style={{
@@ -227,7 +227,7 @@ function App() {
               textShadow: '0 0 20px rgba(0, 210, 255, 0.2)',
             }}
           >
-            CYBERPUNK CPU & DAT SIMULATOR
+            CPU Simulator
           </h1>
         </div>
 
