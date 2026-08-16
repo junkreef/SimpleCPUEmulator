@@ -16,7 +16,7 @@ export const InstructionExplainer: React.FC<InstructionExplainerProps> = ({ exec
   switch (phase) {
     case 'FETCH':
       phaseTitle = '1. FETCH (命令フェッチ)';
-      phaseDesc = `プログラムカウンタ PC (値: 0x${cpu.pc.toString(16).toUpperCase().padStart(2, '0')}) が指すROMのアドレスから、次の命令のオペコード（1バイト目）を読み出します。`;
+      phaseDesc = `プログラムカウンタ PC (値: 0x${cpu.pc.toString(16).toUpperCase().padStart(2, '0')}) が指す番地をDATで変換し、その物理RAMの番地から次の命令のオペコード（1バイト目）を読み出します。`;
       themeColor = 'var(--color-primary)';
       break;
 
