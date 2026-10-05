@@ -18,7 +18,9 @@ CPUは以下のレジスタおよびフラグを保持しています。すべ�
 | **PC (Program Counter)** | 8-bit | プログラムカウンタ。次に実行する命令の**仮想アドレス**を指します。 |
 | **DATR (DAT Control Register)** | 8-bit | DAT（動的アドレス変換）制御レジスタ。下位1ビットが有効フラグ（`1`:有効, `0`:無効）です。 |
 | **CR1 (Control Register 1)** | 8-bit | コントロールレジスタ1 (PASCE: Primary Address-Space-Control Element)。DAT有効時に使用する**ページテーブルの物理フレーム番号 (0〜7)** を保持します。 |
-| **ZF (Zero Flag)** | 1-bit | ゼロフラグ。`CMP`命令による比較結果が「一致（等しい）」した場合に `true` になります。 |
+| **ZF (Zero Flag)** | 1-bit | ゼロフラグ。`ADD` / `SUB` / `CMP` の結果が `0` のとき `true`（`CMP` では「一致（等しい）」したとき）。 |
+| **CF (Carry Flag)** | 1-bit | キャリーフラグ。`ADD` で符号なしの結果が `255` を超えたとき（桁あふれ）、`SUB` / `CMP` で借りが発生したとき（符号なしで `a < b`）に `true`。 |
+| **OF (Overflow Flag)** | 1-bit | オーバーフローフラグ。値を符号付き（`-128`〜`127`）とみなしたとき、`ADD` / `SUB` / `CMP` の結果が範囲を超えたら `true`（例：`127 + 1`）。 |
 | **EF (Error Flag)** | 1-bit | エラーフラグ（例外フラグ）。未定義命令の実行、PCの範囲外（256バイト以上）への逸脱、または**DAT変換例外（ページフォルト等）**が発生した場合に `true` となり、CPUを異常停止させます。 |
 | **Halted** | 1-bit | 実行停止フラグ。`HALT`命令を実行すると `true` になり、CPUは正常に停止します。 |
 
@@ -176,12 +178,12 @@ stateDiagram-v2
 
 | Opcode | Mnemonic | バイト数 | オペランドタイプ | 説明 |
 | :--- | :--- | :---: | :--- | :--- |
-| **0x01** | `ADD rd, rs` | 2 | `reg_reg` | `R[rd] = (R[rd] + R[rs]) & 0xFF` |
-| **0x02** | `ADD rd, imm` | 3 | `reg_imm` | `R[rd] = (R[rd] + imm) & 0xFF` |
-| **0x03** | `SUB rd, rs` | 2 | `reg_reg` | `R[rd] = (R[rd] - R[rs] + 256) & 0xFF` |
-| **0x04** | `SUB rd, imm` | 3 | `reg_imm` | `R[rd] = (R[rd] - imm + 256) & 0xFF` |
-| **0x05** | `CMP ra, rb` | 2 | `reg_reg` | `ZF = (R[ra] == R[rb])` (等しければZF=1, 違えば0) |
-| **0x06** | `CMP ra, imm` | 3 | `reg_imm` | `ZF = (R[ra] == imm)` (等しければZF=1, 違えば0) |
+| **0x01** | `ADD rd, rs` | 2 | `reg_reg` | `R[rd] = (R[rd] + R[rs]) & 0xFF`（ZF・CF・OF を更新） |
+| **0x02** | `ADD rd, imm` | 3 | `reg_imm` | `R[rd] = (R[rd] + imm) & 0xFF`（ZF・CF・OF を更新） |
+| **0x03** | `SUB rd, rs` | 2 | `reg_reg` | `R[rd] = (R[rd] - R[rs] + 256) & 0xFF`（ZF・CF・OF を更新） |
+| **0x04** | `SUB rd, imm` | 3 | `reg_imm` | `R[rd] = (R[rd] - imm + 256) & 0xFF`（ZF・CF・OF を更新） |
+| **0x05** | `CMP ra, rb` | 2 | `reg_reg` | `R[ra] - R[rb]` を計算して答えは捨て、ZF・CF・OF だけ更新（等しければZF=1、`R[ra] < R[rb]` ならCF=1） |
+| **0x06** | `CMP ra, imm` | 3 | `reg_imm` | `R[ra] - imm` を計算して答えは捨て、ZF・CF・OF だけ更新（等しければZF=1、`R[ra] < imm` ならCF=1） |
 | **0x10** | `LOAD rd, imm` | 3 | `reg_imm` | `R[rd] = imm` (即値をレジスタにロード) |
 | **0x11** | `LOAD rd, [addr]`| 3 | `reg_addr` | `R[rd] = Memory[addr]` (仮想アドレスからロード) |
 | **0x12** | `LOAD rd, [ra]` | 2 | `reg_ind` | `R[rd] = Memory[R[ra]]` (レジスタ間接ロード) |

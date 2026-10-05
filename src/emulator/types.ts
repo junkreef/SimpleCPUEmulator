@@ -8,7 +8,9 @@ export interface CPUState {
   pc: number;          // プログラムカウンタ (8bit)
   datr: number;        // DAT制御レジスタ (8bit、下位1bitが有効フラグ)
   cr1: number;         // コントロールレジスタ1 (PASCE / ページテーブルの物理フレーム番号 0~7)
-  zf: boolean;         // ゼロフラグ
+  zf: boolean;         // ゼロフラグ (ADD/SUB/CMP の結果が0)
+  cf: boolean;         // キャリーフラグ (符号なしの桁あふれ・引き算の借り)
+  of: boolean;         // オーバーフローフラグ (符号付き -128〜127 で見たときのあふれ)
   ef: boolean;         // エラーフラグ (DAT例外等)
   halted: boolean;     // 実行停止フラグ
   ram: Uint8Array;     // 内蔵RAM (512バイト)

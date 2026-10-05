@@ -19,6 +19,8 @@ export const initCPUState = (romData?: Uint8Array): CPUState => {
     datr: 0,
     cr1: 0, // コントロールレジスタ1の初期値
     zf: false,
+    cf: false,
+    of: false,
     ef: false,
     halted: false,
     ram,

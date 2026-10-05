@@ -1,4 +1,25 @@
-import { InstructionDef } from './types';
+import { InstructionDef, CPUState } from './types';
+
+// 8ビット加算を行い、ZF / CF / OF を更新して結果を返す
+const add8 = (cpu: CPUState, a: number, b: number): number => {
+  const raw = a + b;
+  const r = raw & 0xFF;
+  cpu.zf = r === 0;
+  cpu.cf = raw > 0xFF;                            // 符号なしで 255 を超えた（桁あふれ）
+  cpu.of = ((a ^ r) & (b ^ r) & 0x80) !== 0;      // 同符号どうしを足して符号が変わった
+  return r;
+};
+
+// 8ビット減算を行い、ZF / CF / OF を更新して結果を返す（CMP も同じ計算で答えを捨てる）
+const sub8 = (cpu: CPUState, a: number, b: number): number => {
+  const r = (a - b + 256) & 0xFF;
+  cpu.zf = r === 0;
+  cpu.cf = a < b;                                 // 符号なしで借りが発生（a < b）
+  cpu.of = ((a ^ b) & (a ^ r) & 0x80) !== 0;      // 異符号どうしを引いて符号が変わった
+  return r;
+};
+
+const FLAGS_NOTE = '結果に応じて ZF・CF・OF が変わります。';
 
 export const InstructionSet: Record<number, InstructionDef> = {
   // --- ADD (加算) ---
@@ -8,9 +29,9 @@ export const InstructionSet: Record<number, InstructionDef> = {
     bytes: 2,
     operandType: 'reg_reg',
     execute: (cpu, [rd, rs]) => {
-      cpu.registers[rd] = (cpu.registers[rd] + cpu.registers[rs]) & 0xFF;
+      cpu.registers[rd] = add8(cpu, cpu.registers[rd], cpu.registers[rs]);
     },
-    explain: ([rd, rs]) => `レジスタ R${rd} に レジスタ R${rs} の値を加算します。`,
+    explain: ([rd, rs]) => `レジスタ R${rd} に レジスタ R${rs} の値を加算します。${FLAGS_NOTE}`,
   },
   0x02: {
     opcode: 0x02,
@@ -18,9 +39,9 @@ export const InstructionSet: Record<number, InstructionDef> = {
     bytes: 3,
     operandType: 'reg_imm',
     execute: (cpu, [rd, imm]) => {
-      cpu.registers[rd] = (cpu.registers[rd] + imm) & 0xFF;
+      cpu.registers[rd] = add8(cpu, cpu.registers[rd], imm);
     },
-    explain: ([rd, imm]) => `レジスタ R${rd} に 値 ${imm} (0x${imm.toString(16).toUpperCase()}) を加算します。`,
+    explain: ([rd, imm]) => `レジスタ R${rd} に 値 ${imm} (0x${imm.toString(16).toUpperCase()}) を加算します。${FLAGS_NOTE}`,
   },
 
   // --- SUB (減算) ---
@@ -30,9 +51,9 @@ export const InstructionSet: Record<number, InstructionDef> = {
     bytes: 2,
     operandType: 'reg_reg',
     execute: (cpu, [rd, rs]) => {
-      cpu.registers[rd] = (cpu.registers[rd] - cpu.registers[rs] + 256) & 0xFF;
+      cpu.registers[rd] = sub8(cpu, cpu.registers[rd], cpu.registers[rs]);
     },
-    explain: ([rd, rs]) => `レジスタ R${rd} から レジスタ R${rs} の値を減算します。`,
+    explain: ([rd, rs]) => `レジスタ R${rd} から レジスタ R${rs} の値を減算します。${FLAGS_NOTE}`,
   },
   0x04: {
     opcode: 0x04,
@@ -40,9 +61,9 @@ export const InstructionSet: Record<number, InstructionDef> = {
     bytes: 3,
     operandType: 'reg_imm',
     execute: (cpu, [rd, imm]) => {
-      cpu.registers[rd] = (cpu.registers[rd] - imm + 256) & 0xFF;
+      cpu.registers[rd] = sub8(cpu, cpu.registers[rd], imm);
     },
-    explain: ([rd, imm]) => `レジスタ R${rd} から 値 ${imm} (0x${imm.toString(16).toUpperCase()}) を減算します。`,
+    explain: ([rd, imm]) => `レジスタ R${rd} から 値 ${imm} (0x${imm.toString(16).toUpperCase()}) を減算します。${FLAGS_NOTE}`,
   },
 
   // --- CMP (比較) ---
@@ -52,9 +73,9 @@ export const InstructionSet: Record<number, InstructionDef> = {
     bytes: 2,
     operandType: 'reg_reg',
     execute: (cpu, [ra, rb]) => {
-      cpu.zf = cpu.registers[ra] === cpu.registers[rb];
+      sub8(cpu, cpu.registers[ra], cpu.registers[rb]); // 引き算して答えは捨て、旗だけ残す
     },
-    explain: ([ra, rb]) => `レジスタ R${ra} と レジスタ R${rb} の値を比較します（等しければZFフラグがONになります）。`,
+    explain: ([ra, rb]) => `レジスタ R${ra} から レジスタ R${rb} を引いて比較します。答えは捨て、旗だけ残します（等しければZF、R${ra} の方が小さければCFがONになります）。`,
   },
   0x06: {
     opcode: 0x06,
@@ -62,9 +83,9 @@ export const InstructionSet: Record<number, InstructionDef> = {
     bytes: 3,
     operandType: 'reg_imm',
     execute: (cpu, [ra, imm]) => {
-      cpu.zf = cpu.registers[ra] === imm;
+      sub8(cpu, cpu.registers[ra], imm); // 引き算して答えは捨て、旗だけ残す
     },
-    explain: ([ra, imm]) => `レジスタ R${ra} と 値 ${imm} (0x${imm.toString(16).toUpperCase()}) を比較します（等しければZFフラグがONになります）。`,
+    explain: ([ra, imm]) => `レジスタ R${ra} から 値 ${imm} (0x${imm.toString(16).toUpperCase()}) を引いて比較します。答えは捨て、旗だけ残します（等しければZF、R${ra} の方が小さければCFがONになります）。`,
   },
 
   // --- LOAD (メモリ/即値からロード) ---

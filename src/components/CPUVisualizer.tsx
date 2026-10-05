@@ -498,18 +498,19 @@ export const CPUVisualizer: React.FC<CPUVisualizerProps> = ({ execState }) => {
             })}
           </g>
 
-          {/* (10) Zero Flag & Error Flag */}
-          <g transform="translate(30, 350)">
-            {/* ZF */}
-            <g transform="translate(0, 0)">
-              <circle cx="12" cy="12" r="8" fill={cpu.zf ? 'rgba(0, 255, 170, 0.2)' : 'rgba(10, 18, 36, 0.4)'} stroke={cpu.zf ? 'var(--color-success)' : 'var(--border-color)'} strokeWidth="1.2" />
-              <text x="25" y="16" fill={cpu.zf ? 'var(--color-success)' : 'var(--color-text-muted)'} fontSize="8" fontWeight="700">ZF (Zero)</text>
-            </g>
-            {/* EF */}
-            <g transform="translate(0, 25)">
-              <circle cx="12" cy="12" r="8" fill={cpu.ef ? 'rgba(255, 0, 127, 0.2)' : 'rgba(10, 18, 36, 0.4)'} stroke={cpu.ef ? 'var(--color-secondary)' : 'var(--border-color)'} strokeWidth="1.2" className={cpu.ef ? 'animate-blink' : ''} />
-              <text x="25" y="16" fill={cpu.ef ? 'var(--color-secondary)' : 'var(--color-text-muted)'} fontSize="8" fontWeight="700">EF (Fault)</text>
-            </g>
+          {/* (10) フラグ (ZF / CF / OF) & Error Flag */}
+          <g transform="translate(30, 346)">
+            {([
+              ['ZF (Zero)', cpu.zf, 'var(--color-success)', 'rgba(0, 255, 170, 0.2)'],
+              ['CF (Carry)', cpu.cf, 'var(--color-success)', 'rgba(0, 255, 170, 0.2)'],
+              ['OF (Overflow)', cpu.of, 'var(--color-success)', 'rgba(0, 255, 170, 0.2)'],
+              ['EF (Fault)', cpu.ef, 'var(--color-secondary)', 'rgba(255, 0, 127, 0.2)'],
+            ] as [string, boolean, string, string][]).map(([label, on, color, glow], i) => (
+              <g key={label} transform={`translate(0, ${i * 21})`}>
+                <circle cx="12" cy="10" r="7" fill={on ? glow : 'rgba(10, 18, 36, 0.4)'} stroke={on ? color : 'var(--border-color)'} strokeWidth="1.2" className={on && label.startsWith('EF') ? 'animate-blink' : ''} />
+                <text x="24" y="13.5" fill={on ? color : 'var(--color-text-muted)'} fontSize="8" fontWeight="700">{label}</text>
+              </g>
+            ))}
           </g>
 
           {/* ========================================================================= */}
