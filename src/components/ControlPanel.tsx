@@ -31,7 +31,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   let statusClass = 'glow-text-cyan';
 
   if (cpu.ef) {
-    statusText = '🛑 DAT EXCEPTION FAULT (エラー停止)';
+    statusText = execState.faultReason === 'undefined-opcode' ? '🛑 未定義命令 FAULT (エラー停止)' : '🛑 DAT EXCEPTION FAULT (エラー停止)';
     statusClass = 'glow-text-pink animate-blink';
   } else if (cpu.halted) {
     statusText = '🏁 HALT (実行完了)';

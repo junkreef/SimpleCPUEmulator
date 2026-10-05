@@ -41,6 +41,7 @@ export const initCPUExecutionState = (romData?: Uint8Array): CPUExecutionState =
     lastAccessedRomAddr: null,
     lastWriteRamAddr: null,
     addressTranslationLog: null,
+    faultReason: null,
   };
 };
 
@@ -267,6 +268,7 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
 
       if (!trans.success || trans.physicalAddr === null) {
         // 命令フェッチ中のDAT変換例外 (ページフォルト)
+        nextState.faultReason = 'page-fault';
         nextState.cpu.ef = true;
         nextState.cpu.halted = true;
         nextState.phase = 'FAULT';
@@ -279,6 +281,7 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
       const instDef = InstructionSet[opcode];
       if (!instDef) {
         // 未定義命令例外
+        nextState.faultReason = 'undefined-opcode';
         nextState.cpu.ef = true;
         nextState.cpu.halted = true;
         nextState.phase = 'FAULT';
@@ -294,6 +297,7 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
         const vAddr = (pc + i) & 0xFF;
         const t = translateAddress(nextState.cpu, vAddr);
         if (!t.success || t.physicalAddr === null) {
+          nextState.faultReason = 'page-fault';
           nextState.cpu.ef = true;
           nextState.cpu.halted = true;
           nextState.phase = 'FAULT';
@@ -360,6 +364,7 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
           return nextState.cpu.ram[trans.physicalAddr];
         } else {
           // DAT変換エラー
+          nextState.faultReason = 'page-fault';
           nextState.cpu.ef = true;
           nextState.cpu.halted = true;
           return 0;
@@ -377,6 +382,7 @@ export const stepCPU = (execState: CPUExecutionState): CPUExecutionState => {
           return true;
         } else {
           // DAT変換エラー
+          nextState.faultReason = 'page-fault';
           nextState.cpu.ef = true;
           nextState.cpu.halted = true;
           return false;

@@ -1,5 +1,6 @@
 import React from 'react';
 import { CPUExecutionState } from '../emulator/types';
+import { translateAddress } from '../emulator/cpu';
 
 interface InstructionExplainerProps {
   execState: CPUExecutionState;
@@ -39,8 +40,16 @@ export const InstructionExplainer: React.FC<InstructionExplainerProps> = ({ exec
       break;
 
     case 'FAULT':
-      phaseTitle = '🛑 FAULT (アドレス変換例外)';
-      phaseDesc = 'DATによる動的アドレス変換の実行中、アクセス権限がないか、有効な物理フレームが割り当てられていない仮想メモリ領域へのアクセスが発生し、CPUがエラー停止（例外発生）しました。';
+      if (execState.faultReason === 'undefined-opcode') {
+        const t = translateAddress(cpu, cpu.pc);
+        const op = t.success && t.physicalAddr !== null ? cpu.ram[t.physicalAddr] : null;
+        const opText = op !== null ? ` 0x${op.toString(16).toUpperCase().padStart(2, '0')} ` : '';
+        phaseTitle = '🛑 FAULT (未定義命令)';
+        phaseDesc = `PC (値: 0x${cpu.pc.toString(16).toUpperCase().padStart(2, '0')}) の番地にある${opText}は命令表にない番号のため、命令として実行できず、CPUがエラー停止（例外発生）しました。プログラムの最後に HALT があるか確認してください。`;
+      } else {
+        phaseTitle = '🛑 FAULT (アドレス変換例外)';
+        phaseDesc = 'DATによる動的アドレス変換の実行中、アクセス権限がないか、有効な物理フレームが割り当てられていない仮想メモリ領域へのアクセスが発生し、CPUがエラー停止（例外発生）しました。';
+      }
       themeColor = 'var(--color-secondary)';
       break;
   }
@@ -117,9 +126,9 @@ export const InstructionExplainer: React.FC<InstructionExplainerProps> = ({ exec
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>🌐 Dynamic Address Transition (DAT):</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>🌐 Dynamic Address Translation (DAT):</span>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: addressTranslationLog.success ? 'var(--color-success)' : 'var(--color-secondary)' }}>
-              {addressTranslationLog.success ? 'ADDRESS TRANS TRANSLATED' : 'TRANSLATION FAULT'}
+              {addressTranslationLog.success ? 'ADDRESS TRANSLATED' : 'TRANSLATION FAULT'}
             </span>
           </div>
 

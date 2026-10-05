@@ -165,7 +165,7 @@ export const InstructionSet: Record<number, InstructionDef> = {
         cpu.pc = addr;
       }
     },
-    explain: ([addr]) => `前回の比較が「一致（ZFフラグがON）」していれば、アドレス 0x${addr.toString(16).toUpperCase().padStart(2, '0')} にジャンプします。`,
+    explain: ([addr]) => `ZFフラグがON（直前の CMP／ADD／SUB の結果が0）なら、アドレス 0x${addr.toString(16).toUpperCase().padStart(2, '0')} にジャンプします。`,
   },
   0x32: {
     opcode: 0x32,
@@ -177,7 +177,7 @@ export const InstructionSet: Record<number, InstructionDef> = {
         cpu.pc = addr;
       }
     },
-    explain: ([addr]) => `前回の比較が「不一致（ZFフラグがOFF）」なら、アドレス 0x${addr.toString(16).toUpperCase().padStart(2, '0')} にジャンプします。`,
+    explain: ([addr]) => `ZFフラグがOFF（直前の CMP／ADD／SUB の結果が0でない）なら、アドレス 0x${addr.toString(16).toUpperCase().padStart(2, '0')} にジャンプします。`,
   },
   0x33: {
     opcode: 0x33,
@@ -199,7 +199,7 @@ export const InstructionSet: Record<number, InstructionDef> = {
         cpu.pc = cpu.registers[rs];
       }
     },
-    explain: ([rs]) => `前回の比較が「一致（ZFフラグがON）」していれば、レジスタ R${rs} の値が指すアドレスにジャンプします。`,
+    explain: ([rs]) => `ZFフラグがON（直前の CMP／ADD／SUB の結果が0）なら、レジスタ R${rs} の値が指すアドレスにジャンプします。`,
   },
   0x35: {
     opcode: 0x35,
@@ -211,7 +211,7 @@ export const InstructionSet: Record<number, InstructionDef> = {
         cpu.pc = cpu.registers[rs];
       }
     },
-    explain: ([rs]) => `前回の比較が「不一致（ZFフラグがOFF）」なら、レジスタ R${rs} の値が指すアドレスにジャンプします。`,
+    explain: ([rs]) => `ZFフラグがOFF（直前の CMP／ADD／SUB の結果が0でない）なら、レジスタ R${rs} の値が指すアドレスにジャンプします。`,
   },
 
   // --- DAT (動的アドレス変換) ---

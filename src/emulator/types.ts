@@ -70,6 +70,8 @@ export interface CPUExecutionState {
   lastAccessedRamAddr: number | null;
   lastAccessedRomAddr: number | null;
   lastWriteRamAddr: number | null;
+  // FAULT の原因（未定義命令 / アドレス変換例外）。FAULT していなければ null
+  faultReason: 'undefined-opcode' | 'page-fault' | null;
   addressTranslationLog: {
     virtualAddr: number;
     vpn: number;
