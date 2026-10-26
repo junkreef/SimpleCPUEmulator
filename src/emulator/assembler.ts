@@ -69,6 +69,121 @@ const parseDSOperand = (operandStr: string): { bytes: number; err?: string } => 
   return { bytes: total };
 };
 
+// DC擬似命令の初期値をバイト列に変換する。
+// 書式: [反復数]型[L長さ]'初期値' をカンマで並べる  例) X'2A' / X'01,02,FF' / CL8'ABC' / C'HELLO',X'00'
+const parseDCOperand = (operandStr: string): { bytes: number[]; err?: string } => {
+  const bytes: number[] = [];
+  let rest = operandStr;
+
+  while (true) {
+    const head = rest.match(/^(\d+)?([a-zA-Z])(?:L(\d+))?'/);
+    if (!head) {
+      return {
+        bytes: [],
+        err: `DCのオペランド書式が不正です: "${operandStr}"（例: X'2A', X'01,02', C'HELLO', C'HI',X'00'）`,
+      };
+    }
+    const dup = head[1] !== undefined ? parseInt(head[1], 10) : 1;
+    const type = head[2].toUpperCase();
+    const length = head[3] !== undefined ? parseInt(head[3], 10) : undefined;
+
+    // 閉じ引用符までを初期値として読む（'' は ' 1文字を表す）
+    let nominal = '';
+    let i = head[0].length;
+    let closed = false;
+    while (i < rest.length) {
+      if (rest[i] === "'") {
+        if (rest[i + 1] === "'") {
+          nominal += "'";
+          i += 2;
+          continue;
+        }
+        closed = true;
+        i++;
+        break;
+      }
+      nominal += rest[i];
+      i++;
+    }
+    if (!closed) {
+      return { bytes: [], err: `DCの初期値に閉じ引用符 ' がありません: "${operandStr}"` };
+    }
+    if (length !== undefined && length <= 0) {
+      return { bytes: [], err: `DCの長さ指定は1以上にしてください: "${operandStr}"` };
+    }
+
+    // 1要素分のバイト列を作る
+    let unit: number[] = [];
+    if (type === 'X') {
+      // 16進数。カンマ区切りで複数の値を並べられる。長さ指定時は左側をゼロ詰め／切り捨て。
+      for (const item of nominal.split(',')) {
+        const hex = item.trim();
+        if (!/^[0-9A-Fa-f]+$/.test(hex)) {
+          return { bytes: [], err: `DCのX型の初期値は16進数で書いてください: "${item}"` };
+        }
+        const padded = hex.length % 2 === 1 ? '0' + hex : hex;
+        let value: number[] = [];
+        for (let p = 0; p < padded.length; p += 2) {
+          value.push(parseInt(padded.slice(p, p + 2), 16));
+        }
+        if (length !== undefined) {
+          value = value.length >= length
+            ? value.slice(value.length - length)
+            : [...new Array(length - value.length).fill(0), ...value];
+        }
+        unit.push(...value);
+      }
+    } else if (type === 'C') {
+      // 文字列（ASCII）。長さ指定時は右側を空白(0x20)で埋める／切り捨て。
+      if (nominal === '') {
+        return { bytes: [], err: `DCのC型の初期値が空です: "${operandStr}"` };
+      }
+      for (const ch of nominal) {
+        const code = ch.charCodeAt(0);
+        if (ch.length !== 1 || code > 0x7F) {
+          return { bytes: [], err: `DCのC型に使えるのはASCII文字だけです: "${ch}"` };
+        }
+        unit.push(code);
+      }
+      if (length !== undefined) {
+        unit = unit.length >= length
+          ? unit.slice(0, length)
+          : [...unit, ...new Array(length - unit.length).fill(0x20)];
+      }
+    } else {
+      return { bytes: [], err: `DCでサポートされていない型です: "${type}"（使用可能: X, C）` };
+    }
+
+    if (bytes.length + dup * unit.length > 256) {
+      return { bytes: [], err: `DCの初期値が256バイトを超えています: "${operandStr}"` };
+    }
+    for (let d = 0; d < dup; d++) bytes.push(...unit);
+
+    // 次のオペランド（カンマ区切り）へ
+    rest = rest.slice(i).trimStart();
+    if (rest === '') break;
+    if (!rest.startsWith(',')) {
+      return { bytes: [], err: `DCのオペランドの区切りが不正です（カンマで区切ってください）: "${operandStr}"` };
+    }
+    rest = rest.slice(1).trimStart();
+  }
+
+  if (bytes.length === 0) {
+    return { bytes: [], err: `DCで定義するサイズが0です: "${operandStr}"` };
+  }
+  return { bytes };
+};
+
+// コメント除去（セミコロン以降を捨てる）。ただし DC の '...' 内のセミコロンは文字として残す。
+const stripComment = (line: string): string => {
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "'") inQuote = !inQuote;
+    else if (line[i] === ';' && !inQuote) return line.slice(0, i);
+  }
+  return line;
+};
+
 // オペランドパース用の正規表現マッピング
 const OperandRegex: Record<OperandType, RegExp> = {
   none: /^\s*$/,
@@ -223,7 +338,7 @@ export const assemble = (sourceCode: string): AssembleResult => {
     const lineNumber = i + 1;
 
     // コメント除去 (セミコロン以降を捨てる)
-    const withoutComment = rawLine.split(';')[0].trim();
+    const withoutComment = stripComment(rawLine).trim();
     if (withoutComment === '') continue; // 空行
 
     let remaining = withoutComment;
@@ -284,6 +399,17 @@ export const assemble = (sourceCode: string): AssembleResult => {
           continue;
         }
         currentAddress += ds.bytes;
+        continue;
+      }
+
+      // DC擬似命令: 初期値付きの定数領域を定義する（実命令ではない）
+      if (pl.mnemonic === 'DC') {
+        const dc = parseDCOperand(pl.operandStr ?? '');
+        if (dc.err) {
+          errors.push({ line: pl.lineNumber, text: pl.originalText, message: dc.err });
+          continue;
+        }
+        currentAddress += dc.bytes.length;
         continue;
       }
 
@@ -363,6 +489,28 @@ export const assemble = (sourceCode: string): AssembleResult => {
       addressToLineMap[writePtr] = pl.lineNumber;
       lineToAddressMap[pl.lineNumber] = writePtr;
       writePtr += ds.bytes;
+      continue;
+    }
+
+    // DC擬似命令: 初期値のバイト列をそのままROMに書き込む
+    if (pl.mnemonic === 'DC') {
+      const dc = parseDCOperand(pl.operandStr ?? '');
+      if (dc.err) {
+        errors.push({ line: pl.lineNumber, text: pl.originalText, message: dc.err });
+        continue;
+      }
+      if (writePtr + dc.bytes.length > 256) {
+        errors.push({
+          line: pl.lineNumber,
+          text: pl.originalText,
+          message: `ROMの最大容量（256バイト）を超過しました（現在: ${writePtr + dc.bytes.length}バイト）。`,
+        });
+        break;
+      }
+      addressToLineMap[writePtr] = pl.lineNumber;
+      lineToAddressMap[pl.lineNumber] = writePtr;
+      rom.set(dc.bytes, writePtr);
+      writePtr += dc.bytes.length;
       continue;
     }
 
